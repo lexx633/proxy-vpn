@@ -12,12 +12,16 @@ let appVersion = getAppVersion()
 let NOTIFY_TOGGLE_RUNNING_SHORTCUT      = Notification.Name("NOTIFY_TOGGLE_RUNNING_SHORTCUT")
 let NOTIFY_SWITCH_PROXY_MODE_SHORTCUT   = Notification.Name("NOTIFY_SWITCH_PROXY_MODE_SHORTCUT")
 
-// Preferences tabs — removed Routing, Pac, Dns; added Limm
+// Preferences tabs — only generalTab/advanceTab/subscribeTab/aboutTab shown in window;
+// dnsTab/routingTab/pacTab kept for compilation (their view controllers still exist in project)
 extension Settings.PaneIdentifier {
     static let generalTab   = Self("generalTab")
     static let advanceTab   = Self("advanceTab")
     static let subscribeTab = Self("subscribeTab")
     static let aboutTab     = Self("aboutTab")
+    static let dnsTab       = Self("dnsTab")
+    static let routingTab   = Self("routingTab")
+    static let pacTab       = Self("pacTab")
 }
 
 let preferencesWindowController = PreferencesWindowController(

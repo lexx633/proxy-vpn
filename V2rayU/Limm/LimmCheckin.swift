@@ -187,7 +187,7 @@ class LimmCheckin {
             }
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             let respStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-            NSLog("[Limm] checkin -> %d %@", code, respStr.prefix(120))
+            NSLog("[Limm] checkin -> \(code) \(respStr.prefix(120))")
         }
         task.resume()
     }
