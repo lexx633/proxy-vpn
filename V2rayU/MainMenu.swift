@@ -1,5 +1,5 @@
 // MainMenu.swift — limm VPN menubar controller
-// Menu simplified to: status / toggle / ─── / Preferences / Quit
+// Menu: status / toggle / ─── / Configure / Servers / ─── / [Send Diagnostic Log /  ─── /] Preferences / Quit
 
 import Cocoa
 import ServiceManagement
@@ -84,6 +84,21 @@ class MenuController: NSObject, NSMenuDelegate {
         }
     }
 
+    // "Configure..." — opens the server config window
+    private lazy var configMenuItem: NSMenuItem = {
+        let item = NSMenuItem(title: "Configure...",
+                              action: #selector(openConfig(_:)),
+                              keyEquivalent: "")
+        item.target = self
+        return item
+    }()
+
+    // "Servers" — submenu with the server list
+    private lazy var serversMenuItem: NSMenuItem = {
+        let item = NSMenuItem(title: "Servers", action: nil, keyEquivalent: "")
+        return item
+    }()
+
     private func rebuildMenu() {
         statusMenu.removeAllItems()
 
@@ -94,16 +109,22 @@ class MenuController: NSObject, NSMenuDelegate {
         // 3. Separator
         statusMenu.addItem(.separator())
 
-        // 4. "Send Diagnostic Log" — only when checkin enabled
+        // 4. Configure + Servers
+        statusMenu.addItem(configMenuItem)
+        serversMenuItem.submenu = getServerMenus()
+        statusMenu.addItem(serversMenuItem)
+        statusMenu.addItem(.separator())
+
+        // 5. "Send Diagnostic Log" — only when checkin enabled
         let checkinOn = UserDefaults.standard.bool(forKey: LimmConfig.checkinEnabledKey)
         if checkinOn {
             statusMenu.addItem(sendLogMenuItem)
             statusMenu.addItem(.separator())
         }
 
-        // 5. Preferences
+        // 6. Preferences
         if let p = prefsItem { statusMenu.addItem(p) }
-        // 6. Quit
+        // 7. Quit
         if let q = quitItem  { statusMenu.addItem(q) }
     }
 
@@ -148,14 +169,41 @@ class MenuController: NSObject, NSMenuDelegate {
         // not shown in simplified menu — no-op
     }
 
-    // showServers / showRouting kept for V2rayLaunch compatibility (calls these internally)
-    func showServers() {}
+    // showServers — refresh the Servers submenu (called by V2rayLaunch after switch/import)
+    func showServers() {
+        DispatchQueue.main.async {
+            self.serversMenuItem.submenu = self.getServerMenus()
+        }
+    }
     func showRouting() {}
 
-    func getServerMenus() -> NSMenu { NSMenu() }
+    // Build the Servers submenu from the saved server list
+    func getServerMenus() -> NSMenu {
+        let menu = NSMenu()
+        let curSer = UserDefaults.get(forKey: .v2rayCurrentServerName)
+        let servers = V2rayServer.list()
+        if servers.isEmpty {
+            let empty = NSMenuItem(title: "No servers — use Configure...", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+            return menu
+        }
+        for item in servers {
+            menu.addItem(buildServerItem(item: item, curSer: curSer))
+        }
+        return menu
+    }
 
     func buildServerItem(item: V2rayItem, curSer: String?) -> NSMenuItem {
-        NSMenuItem()
+        let title = item.remark.isEmpty ? item.name : item.remark
+        let menuItem = NSMenuItem(title: title,
+                                  action: #selector(switchServer(_:)),
+                                  keyEquivalent: "")
+        menuItem.target = self
+        menuItem.representedObject = item
+        menuItem.state = (item.name == curSer) ? .on : .off
+        menuItem.isEnabled = item.isValid
+        return menuItem
     }
 
     // MARK: - IBActions (kept for xib wiring; most are no-ops in simplified UI)
