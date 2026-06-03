@@ -256,6 +256,10 @@ class ImportUri {
         v2ray.streamGrpc.serviceName = vmess.netPath
         v2ray.streamGrpc.multiMode = vmess.type == "multi" // v2rayN
 
+        // xhttp — limm fix
+        v2ray.streamXhttp.path = vmess.netPath
+        v2ray.streamXhttp.mode = vmess.grpcMode
+
         // tcp
         v2ray.streamTcp.header.type = vmess.type
         if v2ray.streamNetwork == "tcp" && v2ray.streamTcp.header.type == "http" {
@@ -264,7 +268,7 @@ class ImportUri {
             tcpReq.headers.host = [vmess.netHost]
             v2ray.streamTcp.header.request = tcpReq
         }
-            
+
         // quic
         v2ray.streamQuic.header.type = vmess.type
 
@@ -363,6 +367,10 @@ class ImportUri {
         v2ray.streamGrpc.serviceName = vmess.path
         v2ray.streamGrpc.multiMode = vmess.grpcMode == "multi" // v2rayN
 
+        // xhttp — limm fix: map path and mode from URI query params
+        v2ray.streamXhttp.path = vmess.path
+        v2ray.streamXhttp.mode = vmess.grpcMode  // URI uses "mode" param for both grpc and xhttp
+
         // tcp
         v2ray.streamTcp.header.type = vmess.headerType
         if v2ray.streamNetwork == "tcp" && v2ray.streamTcp.header.type == "http" {
@@ -371,10 +379,10 @@ class ImportUri {
             tcpReq.headers.host = [vmess.host]
             v2ray.streamTcp.header.request = tcpReq
         }
-        
+
         // quic
         v2ray.streamQuic.header.type = vmess.headerType
-        
+
         print("importVless-v2ray",v2ray.streamKcp,v2ray.streamKcp.seed)
         
         // check is valid
