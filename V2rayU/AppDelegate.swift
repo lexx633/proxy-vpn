@@ -95,8 +95,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if UserDefaults.get(forKey: .autoUpdateServers) == nil {
             UserDefaults.setBool(forKey: .autoUpdateServers, value: true)
         }
+        // limm: auto-select disabled — prevents constant ping/switch/restart loop
+        // User can enable in Preferences > General if needed
         if UserDefaults.get(forKey: .autoSelectFastestServer) == nil {
-            UserDefaults.setBool(forKey: .autoSelectFastestServer, value: true)
+            UserDefaults.setBool(forKey: .autoSelectFastestServer, value: false)
         }
         if UserDefaults.get(forKey: .autoLaunch) == nil {
             SMLoginItemSetEnabled(launcherAppIdentifier as CFString, true)
@@ -148,7 +150,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // restart checkin timer after wake
         LimmCheckin.shared.stop()
         LimmCheckin.shared.start()
-        ping.pingAll()
+        // ping.pingAll() removed — caused auto-switch/restart loop
     }
 
     @objc func onSleepNote(note: NSNotification) {
