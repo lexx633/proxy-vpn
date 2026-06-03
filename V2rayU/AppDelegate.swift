@@ -102,9 +102,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             SMLoginItemSetEnabled(launcherAppIdentifier as CFString, true)
             UserDefaults.setBool(forKey: .autoLaunch, value: true)
         }
-        if UserDefaults.get(forKey: .runMode) == nil {
-            UserDefaults.set(forKey: .runMode, value: RunMode.global.rawValue)
-        }
+        // limm: ALWAYS Global mode — весь трафик через тоннель
+        UserDefaults.set(forKey: .runMode, value: RunMode.global.rawValue)
         if UserDefaults.get(forKey: .autoClearLog) == nil {
             UserDefaults.setBool(forKey: .autoClearLog, value: true)
         }
