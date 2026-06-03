@@ -26,6 +26,21 @@ jobs:
           ruby-version: '3.2'
           bundler-cache: false
 
+      # ── Upgrade bundled Xray to latest (server runs 26.x; 25.x has XHTTP incompatibility) ──
+      - name: Upgrade bundled xray-core
+        run: |
+          XRAY_VER=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
+          echo "Downloading Xray $XRAY_VER"
+          curl -Lo xray-intel.zip "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VER}/Xray-macos-64.zip"
+          curl -Lo xray-arm64.zip "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VER}/Xray-macos-arm64-v8a.zip"
+          unzip -o xray-intel.zip xray -d intel/
+          unzip -o xray-arm64.zip xray -d arm64/
+          mv -f intel/xray Build/v2ray-core/v2ray
+          mv -f arm64/xray Build/v2ray-core/v2ray-arm64
+          chmod +x Build/v2ray-core/v2ray Build/v2ray-core/v2ray-arm64
+          ./Build/v2ray-core/v2ray-arm64 version || true
+          echo "Xray upgraded to $XRAY_VER"
+
       - name: Install xcodeproj gem
         run: gem install xcodeproj xcpretty --no-document
 
