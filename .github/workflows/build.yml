@@ -24,7 +24,7 @@ jobs:
           bundler-cache: false
 
       - name: Install xcodeproj gem
-        run: gem install xcodeproj --no-document
+        run: gem install xcodeproj xcpretty --no-document
 
       # ── CocoaPods ─────────────────────────────────────────────
       - name: Install CocoaPods
@@ -58,7 +58,9 @@ jobs:
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            | xcpretty --simple || true
+            | xcpretty --color 2>&1 || {
+              echo "❌ xcodebuild ARCHIVE FAILED — raw log:"; exit 1
+            }
 
           ls build/V2rayU.xcarchive/Products/Applications/ || true
 
