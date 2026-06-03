@@ -1,0 +1,116 @@
+name: Build & Deploy limm VPN .dmg
+
+on:
+  push:
+    branches: [ limm-main ]
+  workflow_dispatch:   # ручной запуск
+
+jobs:
+  build:
+    runs-on: macos-14   # Apple Silicon runner (free tier)
+    timeout-minutes: 40
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── Ruby + xcodeproj gem ───────────────────────────────────
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: false
+
+      - name: Install xcodeproj gem
+        run: gem install xcodeproj --no-document
+
+      # ── CocoaPods ─────────────────────────────────────────────
+      - name: Install CocoaPods
+        run: |
+          gem install cocoapods --no-document
+          pod install --repo-update
+        env:
+          COCOAPODS_DISABLE_STATS: true
+
+      # ── Inject Limm token (build-time secret) ─────────────────
+      - name: Generate LimmSecrets.swift
+        run: |
+          sed "s/__LIMM_TOKEN__/${{ secrets.LIMM_MONITOR_TOKEN }}/" \
+            V2rayU/Limm/LimmSecrets.swift.template \
+            > V2rayU/Limm/LimmSecrets.swift
+          echo "LimmSecrets.swift generated."
+
+      # ── Add Limm Swift files to Xcode project ─────────────────
+      - name: Add Limm files to xcodeproj
+        run: ruby scripts/add_limm_files.rb
+
+      # ── Build ──────────────────────────────────────────────────
+      - name: Build V2rayU.app
+        run: |
+          xcodebuild \
+            -workspace V2rayU.xcworkspace \
+            -scheme V2rayU \
+            -configuration Release \
+            -archivePath build/V2rayU.xcarchive \
+            archive \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty --simple || true
+
+          ls build/V2rayU.xcarchive/Products/Applications/ || true
+
+      # ── Package as .dmg ───────────────────────────────────────
+      - name: Create .dmg
+        run: |
+          APP_PATH="build/V2rayU.xcarchive/Products/Applications/V2rayU.app"
+          DMG_NAME="limm-vpn-mac.dmg"
+          hdiutil create \
+            -volname "limm VPN" \
+            -srcfolder "$APP_PATH" \
+            -ov -format UDZO \
+            "build/$DMG_NAME"
+          echo "DMG_NAME=$DMG_NAME" >> $GITHUB_ENV
+          echo "DMG_PATH=build/$DMG_NAME" >> $GITHUB_ENV
+
+      # ── Get short SHA ──────────────────────────────────────────
+      - name: Set version info
+        run: echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      # ── Deploy to limm.space ───────────────────────────────────
+      - name: Upload .dmg to limm.space
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host:     ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key:      ${{ secrets.DEPLOY_KEY }}
+          source:   "build/${{ env.DMG_NAME }}"
+          target:   "/tmp/limm-mac-upload/"
+          strip_components: 1
+
+      - name: Activate .dmg on server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host:     ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key:      ${{ secrets.DEPLOY_KEY }}
+          script: |
+            mv -f /tmp/limm-mac-upload/${{ env.DMG_NAME }} /var/www/limm/vpn/limm-vpn-mac.dmg
+            chmod 644 /var/www/limm/vpn/limm-vpn-mac.dmg
+            echo '{"build":"${{ env.SHORT_SHA }}","version":"1.0-limm"}' \
+              > /var/www/limm/vpn/mac-info.json
+            ls -lh /var/www/limm/vpn/limm-vpn-mac.dmg
+
+      # ── Create GitHub Release ──────────────────────────────────
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name:  v1.0.0-limm-${{ env.SHORT_SHA }}
+          name:      "limm VPN ${{ env.SHORT_SHA }}"
+          body:      "Auto-build from commit ${{ github.sha }}"
+          files:     build/${{ env.DMG_NAME }}
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

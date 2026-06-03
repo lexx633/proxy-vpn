@@ -6,3 +6,10 @@ V2rayU.xcworkspace/xcuserdata
 .idea
 *.app
 *.dmg
+
+# Limm secrets — NEVER commit the real token
+V2rayU/Limm/LimmSecrets.swift
+
+# Build artifacts
+build/
+DerivedData/

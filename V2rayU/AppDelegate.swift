@@ -1,110 +1,93 @@
-//
-//  AppDelegate.swift
-//  V2rayU
-//
-//  Created by yanue on 2018/10/9.
-//  Copyright © 2018 yanue. All rights reserved.
-//
+// AppDelegate.swift — limm VPN (fork of V2rayU)
+// Firebase and AppCenter removed. Limm checkin + updater added.
 
 import Cocoa
 import ServiceManagement
 import MASShortcut
 import Preferences
-import FirebaseCore
-import AppCenter
-import AppCenterAnalytics
-import AppCenterCrashes
 
 let launcherAppIdentifier = "net.yanue.V2rayU.Launcher"
 let appVersion = getAppVersion()
 
-let NOTIFY_TOGGLE_RUNNING_SHORTCUT = Notification.Name(rawValue: "NOTIFY_TOGGLE_RUNNING_SHORTCUT")
-let NOTIFY_SWITCH_PROXY_MODE_SHORTCUT = Notification.Name(rawValue: "NOTIFY_SWITCH_PROXY_MODE_SHORTCUT")
+let NOTIFY_TOGGLE_RUNNING_SHORTCUT      = Notification.Name("NOTIFY_TOGGLE_RUNNING_SHORTCUT")
+let NOTIFY_SWITCH_PROXY_MODE_SHORTCUT   = Notification.Name("NOTIFY_SWITCH_PROXY_MODE_SHORTCUT")
 
-// Preferences
+// Preferences tabs — removed Routing, Pac, Dns; added Limm
 extension Settings.PaneIdentifier {
-    static let generalTab = Self("generalTab")
-    static let advanceTab = Self("advanceTab")
+    static let generalTab   = Self("generalTab")
+    static let advanceTab   = Self("advanceTab")
     static let subscribeTab = Self("subscribeTab")
-    static let pacTab = Self("pacTab")
-    static let routingTab = Self("routingTab")
-    static let dnsTab = Self("dnsTab")
-    static let aboutTab = Self("aboutTab")
+    static let aboutTab     = Self("aboutTab")
 }
 
 let preferencesWindowController = PreferencesWindowController(
-        preferencePanes: [
-            PreferenceGeneralViewController(),
-            PreferenceAdvanceViewController(),
-            PreferenceSubscribeViewController(),
-            PreferenceRoutingViewController(),
-            PreferencePacViewController(),
-            PreferenceDnsViewController(),
-            PreferenceAboutViewController(),
-        ]
+    preferencePanes: [
+        PreferenceGeneralViewController(),
+        PreferenceAdvanceViewController(),
+        PreferenceSubscribeViewController(),
+        PreferenceAboutViewController(),
+    ]
 )
 
-let langStr = Locale.current.languageCode
+let langStr   = Locale.current.languageCode
 let isMainland = langStr == "zh-CN" || langStr == "zh" || langStr == "zh-Hans" || langStr == "zh-Hant"
 
 @NSApplicationMain
 class AppDelegate: NSObject, NSApplicationDelegate {
-    // bar menu
     @IBOutlet weak var statusMenu: NSMenu!
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
-        print("applicationDidFinishLaunching")
-        FirebaseApp.configure()
-        AppCenter.start(withAppSecret: "d52dd1a1-7a3a-4143-b159-a30434f87713", services:[
-          Analytics.self,
-          Crashes.self
-        ])
         // check installed
         V2rayLaunch.checkInstall()
-        
+
         // default settings
-        self.checkDefault()
+        checkDefault()
 
         // auto launch
         if UserDefaults.getBool(forKey: .autoLaunch) {
-            // Insert code here to initialize your application
             let startedAtLogin = NSWorkspace.shared.runningApplications.contains {
                 $0.bundleIdentifier == launcherAppIdentifier
             }
-
             if startedAtLogin {
-                DistributedNotificationCenter.default().post(name: Notification.Name("terminateV2rayU"), object: Bundle.main.bundleIdentifier!)
+                DistributedNotificationCenter.default().post(
+                    name: Notification.Name("terminateV2rayU"),
+                    object: Bundle.main.bundleIdentifier!)
             }
         }
 
-        // wake and sleep
-        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(onSleepNote(note:)), name: NSWorkspace.willSleepNotification, object: nil)
-        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(onWakeNote(note:)), name: NSWorkspace.didWakeNotification, object: nil)
-        // url scheme
-        NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(self.handleAppleEvent(event:replyEvent:)), forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
+        // wake / sleep
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(onSleepNote(note:)),
+            name: NSWorkspace.willSleepNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(onWakeNote(note:)),
+            name: NSWorkspace.didWakeNotification, object: nil)
 
-        // set global hotkey
-        let notifyCenter = NotificationCenter.default
-        notifyCenter.addObserver(forName: NOTIFY_TOGGLE_RUNNING_SHORTCUT, object: nil, queue: nil, using: {
-            notice in
+        // URL scheme
+        NSAppleEventManager.shared().setEventHandler(
+            self, andSelector: #selector(handleAppleEvent(event:replyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID:    AEEventID(kAEGetURL))
+
+        // global hotkeys
+        let nc = NotificationCenter.default
+        nc.addObserver(forName: NOTIFY_TOGGLE_RUNNING_SHORTCUT, object: nil, queue: nil) { _ in
             V2rayLaunch.ToggleRunning()
-        })
-
-        notifyCenter.addObserver(forName: NOTIFY_SWITCH_PROXY_MODE_SHORTCUT, object: nil, queue: nil, using: {
-            notice in
+        }
+        nc.addObserver(forName: NOTIFY_SWITCH_PROXY_MODE_SHORTCUT, object: nil, queue: nil) { _ in
             V2rayLaunch.SwitchProxyMode()
-        })
-
-        // Register global hotkey
+        }
         ShortcutsController.bindShortcuts()
 
-        // run at start
+        // run v2ray at start
         V2rayLaunch.runAtStart()
 
-        // auto check updates
+        // limm: checkin every 15 min
+        LimmCheckin.shared.start()
+
+        // limm: auto check updates from lexx633/vpn-mac releases
         if UserDefaults.getBool(forKey: .autoCheckVersion) {
-            // 初始化更新控制器
-            V2rayUpdater.checkForUpdates()
+            LimmUpdater.shared.checkForUpdates(silent: true)
         }
     }
 
@@ -125,72 +108,64 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if UserDefaults.get(forKey: .autoClearLog) == nil {
             UserDefaults.setBool(forKey: .autoClearLog, value: true)
         }
-        // 启动时清除日志
+        // limm: checkin enabled by default
+        if UserDefaults.standard.object(forKey: LimmConfig.checkinEnabledKey) == nil {
+            UserDefaults.standard.set(true, forKey: LimmConfig.checkinEnabledKey)
+        }
+        // limm: pre-populate our subscription if none exist
+        if UserDefaults.getArray(forKey: .v2raySubList)?.isEmpty ?? true {
+            var sub = V2raySubItem()
+            sub.url    = LimmConfig.subURL
+            sub.remark = "limm.space"
+            V2raySubscription.add(subItem: sub)
+        }
+
         V2rayLaunch.clearLogFile()
-        
         V2rayServer.loadConfig()
         V2rayRoutings.loadConfig()
         V2raySubscription.loadConfig()
     }
 
     @objc func handleAppleEvent(event: NSAppleEventDescriptor, replyEvent: NSAppleEventDescriptor) {
-        guard let appleEventDescription = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject)) else {
-            return
-        }
-
-        guard let appleEventURLString = appleEventDescription.stringValue else {
-            return
-        }
-
-        _ = URL(string: appleEventURLString)
-        // todo
+        guard let desc = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject)),
+              let _ = desc.stringValue else { return }
+        // todo: handle vpn:// scheme
     }
 
     @objc func onWakeNote(note: NSNotification) {
         NSLog("onWakeNote")
-        // reconnect
         if UserDefaults.getBool(forKey: .v2rayTurnOn) {
-            NSLog("V2rayLaunch restart")
             V2rayLaunch.restartV2ray()
         }
-        // auto check updates
         if UserDefaults.getBool(forKey: .autoCheckVersion) {
-            // check version
-            V2rayUpdater.checkForUpdates()
+            LimmUpdater.shared.checkForUpdates(silent: true)
         }
-        // auto update subscribe servers
         if UserDefaults.getBool(forKey: .autoUpdateServers) {
             V2raySubSync.shared.sync()
         }
-        // auto clear log
         if UserDefaults.getBool(forKey: .autoClearLog) {
             V2rayLaunch.truncateLogFile()
         }
-        // ping
+        // restart checkin timer after wake
+        LimmCheckin.shared.stop()
+        LimmCheckin.shared.start()
         ping.pingAll()
     }
 
     @objc func onSleepNote(note: NSNotification) {
         NSLog("onSleepNote")
+        LimmCheckin.shared.stop()
     }
 
-    func applicationShouldTerminate (_ sender: NSApplication) -> NSApplication.TerminateReply {
-        print("applicationShouldTerminate")
-        // unregister All shortcut
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         MASShortcutMonitor.shared().unregisterAllShortcuts()
-        // Insert code here to tear down your application
+        LimmCheckin.shared.stop()
         V2rayLaunch.Stop()
-        // off system proxy
         V2rayLaunch.setSystemProxy(mode: .off)
-        // kill v2ray
         killSelfV2ray()
-        // webServer stop
         webServer.stop()
-        // code
-        print("applicationShouldTerminate end")
-        return NSApplication.TerminateReply.terminateNow
+        return .terminateNow
     }
 
-    func applicationWillTerminate(_ aNotification: Notification) {
-    }
+    func applicationWillTerminate(_ aNotification: Notification) {}
 }
