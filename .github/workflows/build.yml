@@ -5,6 +5,9 @@ on:
     branches: [ limm-main ]
   workflow_dispatch:   # ручной запуск
 
+permissions:
+  contents: write   # needed to create GitHub Releases
+
 jobs:
   build:
     runs-on: macos-14   # Apple Silicon runner (free tier)
