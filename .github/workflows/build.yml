@@ -86,29 +86,31 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "Resolved MARKETING_VERSION=$VERSION"
 
-      # ── Deploy to limm.space ───────────────────────────────────
+      # ── Deploy to limm.space (native scp/ssh — appleboy actions are Linux-only) ──
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
       - name: Upload .dmg to limm.space
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host:     ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key:      ${{ secrets.DEPLOY_KEY }}
-          source:   "build/${{ env.DMG_NAME }}"
-          target:   "/tmp/limm-mac-upload/"
-          strip_components: 1
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "mkdir -p /tmp/limm-mac-upload"
+          scp -i ~/.ssh/deploy_key \
+            build/${{ env.DMG_NAME }} \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/limm-mac-upload/
 
       - name: Activate .dmg on server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host:     ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key:      ${{ secrets.DEPLOY_KEY }}
-          script: |
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'ENDSSH'
             mv -f /tmp/limm-mac-upload/${{ env.DMG_NAME }} /var/www/limm/vpn/limm-vpn-mac.dmg
             chmod 644 /var/www/limm/vpn/limm-vpn-mac.dmg
-            echo '{"version":"${{ env.VERSION }}","build":"${{ env.SHORT_SHA }}"}' \
+            printf '{"version":"%s","build":"%s"}\n' "${{ env.VERSION }}" "${{ env.SHORT_SHA }}" \
               > /var/www/limm/vpn/mac-info.json
             ls -lh /var/www/limm/vpn/limm-vpn-mac.dmg
+          ENDSSH
 
       # ── Create GitHub Release ──────────────────────────────────
       - name: Create GitHub release
