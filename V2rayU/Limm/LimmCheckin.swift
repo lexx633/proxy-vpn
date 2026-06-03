@@ -180,7 +180,11 @@ class LimmCheckin {
         req.httpBody = body
         req.timeoutInterval = 20
 
-        let task = URLSession.shared.dataTask(with: req) { data, resp, err in
+        // Bypass system proxy: in Global mode all traffic goes through SOCKS;
+        // if Xray restarts mid-checkin the proxy is briefly down and the request fails.
+        let directConfig = URLSessionConfiguration.ephemeral
+        directConfig.connectionProxyDictionary = [:]
+        let task = URLSession(configuration: directConfig).dataTask(with: req) { data, resp, err in
             if let err = err {
                 NSLog("[Limm] checkin error: %@", err.localizedDescription)
                 return

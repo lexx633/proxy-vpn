@@ -124,6 +124,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         V2rayLaunch.clearLogFile()
         V2rayServer.loadConfig()
+
+        // Remove the invalid "default" placeholder (empty vmess) — imported subscription provides real servers
+        let servers = V2rayServer.list()
+        if let idx = servers.firstIndex(where: { $0.name == "config.default" }) {
+            V2rayServer.remove(idx: idx)
+        }
         V2rayRoutings.loadConfig()
         V2raySubscription.loadConfig()
     }

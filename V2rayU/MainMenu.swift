@@ -1,5 +1,5 @@
 // MainMenu.swift — limm VPN menubar controller
-// Menu: status / toggle / ─── / Configure / Servers / ─── / [Send Diagnostic Log /  ─── /] Preferences / Quit
+// Menu: status / toggle / ─── / Preferences / ─── / Configure / Servers / ─── / [Send Diagnostic Log / ─── /] Quit
 
 import Cocoa
 import ServiceManagement
@@ -109,21 +109,23 @@ class MenuController: NSObject, NSMenuDelegate {
         // 3. Separator
         statusMenu.addItem(.separator())
 
-        // 4. Configure + Servers
+        // 4. Preferences
+        if let p = prefsItem { statusMenu.addItem(p) }
+        statusMenu.addItem(.separator())
+
+        // 5. Configure + Servers
         statusMenu.addItem(configMenuItem)
         serversMenuItem.submenu = getServerMenus()
         statusMenu.addItem(serversMenuItem)
         statusMenu.addItem(.separator())
 
-        // 5. "Send Diagnostic Log" — only when checkin enabled
+        // 6. "Send Diagnostic Log" — only when checkin enabled
         let checkinOn = UserDefaults.standard.bool(forKey: LimmConfig.checkinEnabledKey)
         if checkinOn {
             statusMenu.addItem(sendLogMenuItem)
             statusMenu.addItem(.separator())
         }
 
-        // 6. Preferences
-        if let p = prefsItem { statusMenu.addItem(p) }
         // 7. Quit
         if let q = quitItem  { statusMenu.addItem(q) }
     }
