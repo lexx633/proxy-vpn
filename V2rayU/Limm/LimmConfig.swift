@@ -7,7 +7,9 @@ enum LimmConfig {
     // API
     static let apiBase      = "https://limm.space/api"
     static let subURL       = "https://limm.space/vpn/sub"
-    static let releasesURL  = "https://api.github.com/repos/lexx633/vpn-mac/releases/latest"
+    // Computed server-side from mac-info.json (single source). Private GitHub API нельзя
+    // (репо приватный, без токена → 403). Шейп: tag_name/name/html_url/assets[].
+    static let releasesURL  = "https://limm.space/vpn/mac/latest"
 
     // Checkin
     static let checkinInterval: TimeInterval = 900   // 15 min

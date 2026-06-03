@@ -76,9 +76,15 @@ jobs:
           echo "DMG_NAME=$DMG_NAME" >> $GITHUB_ENV
           echo "DMG_PATH=build/$DMG_NAME" >> $GITHUB_ENV
 
-      # ── Get short SHA ──────────────────────────────────────────
+      # ── Get version + short SHA ────────────────────────────────
+      # VERSION = MARKETING_VERSION из project.pbxproj — единый источник версии:
+      # тот же бандл (CFBundleShortVersionString) и mac-info.json (для апдейтера).
       - name: Set version info
-        run: echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: |
+          echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          VERSION=$(grep -m1 'MARKETING_VERSION' V2rayU.xcodeproj/project.pbxproj | sed 's/.*= *//; s/;.*//')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Resolved MARKETING_VERSION=$VERSION"
 
       # ── Deploy to limm.space ───────────────────────────────────
       - name: Upload .dmg to limm.space
@@ -100,7 +106,7 @@ jobs:
           script: |
             mv -f /tmp/limm-mac-upload/${{ env.DMG_NAME }} /var/www/limm/vpn/limm-vpn-mac.dmg
             chmod 644 /var/www/limm/vpn/limm-vpn-mac.dmg
-            echo '{"build":"${{ env.SHORT_SHA }}","version":"1.0-limm"}' \
+            echo '{"version":"${{ env.VERSION }}","build":"${{ env.SHORT_SHA }}"}' \
               > /var/www/limm/vpn/mac-info.json
             ls -lh /var/www/limm/vpn/limm-vpn-mac.dmg
 
@@ -108,8 +114,8 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name:  v1.0.0-limm-${{ env.SHORT_SHA }}
-          name:      "limm VPN ${{ env.SHORT_SHA }}"
+          tag_name:  v${{ env.VERSION }}-${{ env.SHORT_SHA }}
+          name:      "limm VPN ${{ env.VERSION }}"
           body:      "Auto-build from commit ${{ github.sha }}"
           files:     build/${{ env.DMG_NAME }}
           prerelease: false
