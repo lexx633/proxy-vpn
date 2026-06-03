@@ -115,10 +115,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // limm: pre-populate our subscription if none exist
         if UserDefaults.getArray(forKey: .v2raySubList)?.isEmpty ?? true {
-            var sub = V2raySubItem()
-            sub.url    = LimmConfig.subURL
-            sub.remark = "limm.space"
-            V2raySubscription.add(subItem: sub)
+            V2raySubscription.add(remark: "limm.space", url: LimmConfig.subURL)
         }
 
         V2rayLaunch.clearLogFile()
