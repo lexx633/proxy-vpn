@@ -49,6 +49,7 @@ jobs:
       # ── Build ──────────────────────────────────────────────────
       - name: Build V2rayU.app
         run: |
+          set -o pipefail
           xcodebuild \
             -workspace V2rayU.xcworkspace \
             -scheme V2rayU \
@@ -58,11 +59,9 @@ jobs:
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            | xcpretty --color 2>&1 || {
-              echo "❌ xcodebuild ARCHIVE FAILED — raw log:"; exit 1
-            }
+            2>&1 | xcpretty --simple
 
-          ls build/V2rayU.xcarchive/Products/Applications/ || true
+          ls build/V2rayU.xcarchive/Products/Applications/
 
       # ── Package as .dmg ───────────────────────────────────────
       - name: Create .dmg
