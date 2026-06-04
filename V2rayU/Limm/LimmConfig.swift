@@ -14,7 +14,7 @@ enum LimmConfig {
     // Checkin
     static let checkinInterval: TimeInterval = 900   // 15 min
     static let clientKind   = "macos"
-    static let clientLabel  = "limm-mac"
+    static let clientLabel  = "пк"
     static let appVersion   = "v2rayu-1.0-limm"
 
     // Server (for L0-L2 raw probes)
