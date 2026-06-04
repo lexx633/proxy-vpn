@@ -9,7 +9,8 @@ enum LimmConfig {
     static let subURL       = "https://limm.space/vpn/sub"
     // proxy-vpn fork (V2rayU-based) has its own info file: proxy-mac-info.json.
     // Hiddify fork (vpn-mac) uses /vpn/mac/latest. Do NOT mix them up.
-    static let releasesURL  = "https://limm.space/vpn/proxy/mac/latest"
+    // Uses /api/ path (no extra nginx rule needed — already proxied publicly).
+    static let releasesURL  = "https://limm.space/api/app-release/proxy-mac/latest"
 
     // Checkin
     static let checkinInterval: TimeInterval = 900   // 15 min
