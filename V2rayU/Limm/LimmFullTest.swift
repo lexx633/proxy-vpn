@@ -32,15 +32,27 @@ final class LimmFullTestWindowController: NSWindowController {
         guard let cv = window?.contentView else { return }
 
         // ── Scroll + text view ────────────────────────────────────────
+        // NSTextView inside NSScrollView needs explicit sizing to render text.
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.hasVerticalScroller   = true
         scrollView.borderType            = .bezelBorder
         scrollView.autohidesScrollers    = true
         cv.addSubview(scrollView)
 
+        let initialW: CGFloat = 580
+        textView.frame                   = NSRect(x: 0, y: 0, width: initialW, height: 0)
         textView.isEditable              = false
         textView.isRichText              = true
         textView.isSelectable            = true
+        textView.isVerticallyResizable   = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask        = [.width]
+        textView.minSize                 = NSSize(width: 0, height: 0)
+        textView.maxSize                 = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                                                   height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.containerSize = NSSize(width: initialW,
+                                                        height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
         textView.font                    = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         textView.backgroundColor         = NSColor(srgbRed: 0.05, green: 0.08, blue: 0.11, alpha: 1)
         textView.drawsBackground         = true

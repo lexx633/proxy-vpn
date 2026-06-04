@@ -28,8 +28,6 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        self.preferredContentSize = NSMakeSize(self.view.frame.size.width,
-                                               self.view.frame.size.height + 160)
 
         // Restore original checkboxes
         autoLaunch.state          = UserDefaults.getBool(forKey: .autoLaunch)          ? .on : .off
@@ -43,6 +41,12 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
     // MARK: - Limm section (programmatic)
 
     private func buildLimmSection() {
+        // Capture original NIB height, then expand view to fit our section below it.
+        let origH: CGFloat = view.frame.height
+        let addH:  CGFloat = 155
+        view.frame.size.height    = origH + addH
+        preferredContentSize      = NSSize(width: view.frame.width, height: view.frame.height)
+
         // Box container
         limmBox = NSBox()
         limmBox.title          = "limm VPN Agent"
@@ -79,12 +83,12 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         sendLogButton.translatesAutoresizingMaskIntoConstraints = false
         limmBox.addSubview(sendLogButton)
 
-        // Layout
+        // Layout: limmBox starts just below original NIB content (view is flipped: y=0 at top).
         NSLayoutConstraint.activate([
-            // Box at bottom of view
+            limmBox.topAnchor.constraint(equalTo: view.topAnchor, constant: origH + 8),
             limmBox.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             limmBox.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            limmBox.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16),
+            limmBox.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8),
 
             // Mode label
             modeLabel.topAnchor.constraint(equalTo: limmBox.topAnchor, constant: 24),

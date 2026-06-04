@@ -93,6 +93,21 @@ class V2rayLaunch: NSObject {
         if !needRunInstall && !checkFileIsRootAdmin(file: v2rayUTool) {
             needRunInstall = true
         }
+        // Force reinstall when bundled xray binary differs from installed (app update with new Xray).
+        if !needRunInstall {
+            #if arch(arm64)
+            let bundledXrayName = "v2ray-arm64"
+            #else
+            let bundledXrayName = "v2ray"
+            #endif
+            let bundledXray = AppResourcesPath + "/v2ray-core/" + bundledXrayName
+            if let bundledSize  = (try? FileManager.default.attributesOfItem(atPath: bundledXray))?[.size] as? Int,
+               let installedSize = (try? FileManager.default.attributesOfItem(atPath: v2rayCoreFile))?[.size] as? Int,
+               bundledSize != installedSize {
+                NSLog("Bundled xray (%d) ≠ installed (%d) — triggering reinstall", bundledSize, installedSize)
+                needRunInstall = true
+            }
+        }
         if !needRunInstall {
             // use /bin/bash to fix crash when V2rayUTool is not exist
             let toolVersion = shell(launchPath: "/bin/bash", arguments: ["-c", "\(v2rayUTool) version"])
