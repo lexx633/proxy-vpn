@@ -17,6 +17,7 @@
                 <outlet property="muxConcurrent" destination="13S-5w-YMH" id="ijT-5C-kyu"/>
                 <outlet property="pacPort" destination="SRQ-zG-lEW" id="jKr-ys-fLS"/>
                 <outlet property="switchGap" destination="ASG-sw-gap" id="ASG-sw-out"/>
+                <outlet property="switchCooldown" destination="ACD-sw-fld" id="ACD-sw-out"/>
                 <outlet property="saveBtn" destination="YJf-A4-mgF" id="k7j-Ly-8Uq"/>
                 <outlet property="sockHost" destination="Rfo-X1-n77" id="by8-Ln-cX3"/>
                 <outlet property="sockPort" destination="uGr-b9-5AH" id="yYa-iP-cqG"/>
@@ -231,6 +232,28 @@
                                 <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                                 <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" selectable="YES" editable="YES" sendsActionOnEndEditing="YES" state="on" borderStyle="bezel" placeholderString=" 50" drawsBackground="YES" id="ASG-sw-cll">
                                     <numberFormatter key="formatter" formatterBehavior="default10_4" numberStyle="decimal" minimumIntegerDigits="1" maximumIntegerDigits="9999" maximumFractionDigits="0" id="ASG-sw-fmt"/>
+                                    <font key="font" metaFont="system"/>
+                                    <color key="textColor" name="controlTextColor" catalog="System" colorSpace="catalog"/>
+                                    <color key="backgroundColor" name="textBackgroundColor" catalog="System" colorSpace="catalog"/>
+                                    <allowedInputSourceLocales>
+                                        <string>NSAllRomanInputSourcesLocaleIdentifier</string>
+                                    </allowedInputSourceLocales>
+                                </textFieldCell>
+                            </textField>
+                            <textField focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" fixedFrame="YES" allowsCharacterPickerTouchBarItem="YES" translatesAutoresizingMaskIntoConstraints="NO" id="ACD-sw-lbl">
+                                <rect key="frame" x="7" y="49" width="143" height="17"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
+                                <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" sendsActionOnEndEditing="YES" alignment="right" title="Switch cooldown (min):" id="ACD-sw-cel">
+                                    <font key="font" metaFont="system"/>
+                                    <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
+                                    <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
+                                </textFieldCell>
+                            </textField>
+                            <textField focusRingType="none" verticalHuggingPriority="750" fixedFrame="YES" allowsCharacterPickerTouchBarItem="YES" translatesAutoresizingMaskIntoConstraints="NO" id="ACD-sw-fld">
+                                <rect key="frame" x="175" y="45" width="56" height="22"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
+                                <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" selectable="YES" editable="YES" sendsActionOnEndEditing="YES" state="on" borderStyle="bezel" placeholderString=" 5" drawsBackground="YES" id="ACD-sw-cll">
+                                    <numberFormatter key="formatter" formatterBehavior="default10_4" numberStyle="decimal" minimumIntegerDigits="1" maximumIntegerDigits="999" maximumFractionDigits="0" id="ACD-sw-fmt"/>
                                     <font key="font" metaFont="system"/>
                                     <color key="textColor" name="controlTextColor" catalog="System" colorSpace="catalog"/>
                                     <color key="backgroundColor" name="textBackgroundColor" catalog="System" colorSpace="catalog"/>
