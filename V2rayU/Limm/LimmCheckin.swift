@@ -91,13 +91,17 @@ class LimmCheckin {
 
     /// Synchronously runs all curl probes, then fires HTTP POST (async, fire-and-forget).
     /// Called by the background timer and by LimmFullTest for immediate one-shot runs.
-    func perform() {
+    /// - Parameter overrideVpnOn: if set, overrides UserDefaults `v2rayTurnOn`.
+    ///   Use `overrideVpnOn: false` in Full Test step 1 (VPN not yet started) so that
+    ///   SOCKS probes (L2–L4 + service checks) are skipped and checkin finishes in ~10s
+    ///   instead of waiting up to 65s for curl timeouts on an unavailable SOCKS port.
+    func perform(overrideVpnOn: Bool? = nil) {
         let token   = LimmConfig.token
         let uid     = LimmConfig.clientUID()
         let socksPort = UserDefaults.standard.integer(forKey: "localSockPort")
             .nonzero ?? 1080
         let socks   = "127.0.0.1:\(socksPort)"
-        let vpnOn   = UserDefaults.standard.bool(forKey: "v2rayTurnOn")
+        let vpnOn   = overrideVpnOn ?? UserDefaults.standard.bool(forKey: "v2rayTurnOn")
 
         NSLog("[Limm] checkin start uid=%@ socks=%@", uid, socks)
 
