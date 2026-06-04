@@ -20,10 +20,10 @@ struct LimmAsset: Codable {
 class LimmUpdater {
     static let shared = LimmUpdater()
 
-    /// Installed version = CFBundleShortVersionString (= MARKETING_VERSION, e.g. "4.2.7").
-    /// Единый источник: CI печёт ту же версию в бандл и в mac-info.json (см. build.yml).
+    /// Installed version = LimmBuildInfo.version (e.g. "4.2.8.13", 4 components).
+    /// CI injects this via add_limm_files.rb at build time — matches what proxy-mac-info.json reports.
     var currentVersion: String {
-        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0"
+        LimmBuildInfo.version
     }
 
     func checkForUpdates(silent: Bool = false) {

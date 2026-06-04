@@ -1,6 +1,6 @@
 // PreferenceGeneral.swift — limm VPN fork
 // Limm section added programmatically (no xib edits needed).
-// Proxy mode selector added — default is Global.
+// Proxy mode is always Global — selector removed.
 
 import Cocoa
 import Preferences
@@ -23,8 +23,6 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
     private var limmBox:         NSBox!
     private var checkinCheckbox: NSButton!
     private var sendLogButton:   NSButton!
-    private var modeLabel:       NSTextField!
-    private var modeControl:     NSSegmentedControl!
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -48,11 +46,12 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         // so frame can be zero even after layoutSubtreeIfNeeded().
         let nibW:  CGFloat = 700
         let nibH:  CGFloat = 360
-        let addH:  CGFloat = 130
+        let addH:  CGFloat = 90
         view.frame.size.height = nibH + addH
         preferredContentSize   = NSSize(width: nibW, height: nibH + addH)
 
-        let mode = RunMode(rawValue: UserDefaults.get(forKey: .runMode) ?? "global") ?? .global
+        // Always use Global mode — no selector needed
+        UserDefaults.set(forKey: .runMode, value: RunMode.global.rawValue)
 
         // ── Box container ────────────────────────────────────────
         limmBox = NSBox()
@@ -60,19 +59,6 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         limmBox.titlePosition = .atTop
         limmBox.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(limmBox)
-
-        // ── Proxy mode ───────────────────────────────────────────
-        modeLabel = NSTextField(labelWithString: "Режим прокси:")
-        modeLabel.translatesAutoresizingMaskIntoConstraints = false
-        limmBox.addSubview(modeLabel)
-
-        modeControl = NSSegmentedControl(labels: ["Global", "PAC", "Manual"],
-                                         trackingMode: .selectOne,
-                                         target: self,
-                                         action: #selector(proxyModeChanged(_:)))
-        modeControl.translatesAutoresizingMaskIntoConstraints = false
-        modeControl.selectedSegment = mode == .global ? 0 : (mode == .pac ? 1 : 2)
-        limmBox.addSubview(modeControl)
 
         // ── Checkin toggle ───────────────────────────────────────
         checkinCheckbox = NSButton(checkboxWithTitle: "Отправлять диагностику на limm.space каждые 15 мин",
@@ -98,15 +84,8 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
             limmBox.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             limmBox.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8),
 
-            // Mode
-            modeLabel.topAnchor.constraint(equalTo: limmBox.topAnchor, constant: 20),
-            modeLabel.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
-
-            modeControl.centerYAnchor.constraint(equalTo: modeLabel.centerYAnchor),
-            modeControl.leadingAnchor.constraint(equalTo: modeLabel.trailingAnchor, constant: 12),
-
             // Checkin
-            checkinCheckbox.topAnchor.constraint(equalTo: modeLabel.bottomAnchor, constant: 14),
+            checkinCheckbox.topAnchor.constraint(equalTo: limmBox.topAnchor, constant: 20),
             checkinCheckbox.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
 
             // Send log
@@ -117,15 +96,6 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
     }
 
     // MARK: - Actions
-
-    @objc private func proxyModeChanged(_ sender: NSSegmentedControl) {
-        let modes: [RunMode] = [.global, .pac, .manual]
-        let selected = modes[sender.selectedSegment]
-        UserDefaults.set(forKey: .runMode, value: selected.rawValue)
-        if UserDefaults.getBool(forKey: .v2rayTurnOn) {
-            V2rayLaunch.restartV2ray()
-        }
-    }
 
     @objc private func checkinToggled(_ sender: NSButton) {
         let enabled = sender.state == .on

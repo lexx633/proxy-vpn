@@ -11,7 +11,7 @@ import Preferences
 
 final class PreferenceAdvanceViewController: NSViewController, SettingsPane {
     let preferencePaneIdentifier: Settings.PaneIdentifier = .advanceTab
-    let preferencePaneTitle = "Advance"
+    let preferencePaneTitle = "Local Ports"
     let toolbarItemIcon = NSImage(named: NSImage.advancedName)!
 
     @IBOutlet weak var saveBtn: NSButtonCell!
