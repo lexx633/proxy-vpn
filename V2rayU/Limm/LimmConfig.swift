@@ -15,7 +15,8 @@ enum LimmConfig {
     static let checkinInterval: TimeInterval = 900   // 15 min
     static let clientKind   = "macos"
     static let clientLabel  = "limm-mac"
-    static let appVersion   = "v2rayu-1.0-limm"
+    // format "version+hash4" — parsed by dashboard buildTag() → shows #hash
+    static let appVersion   = "\(LimmBuildInfo.version)+\(LimmBuildInfo.commit)"
 
     // Server (for L0-L2 raw probes)
     static let serverIP     = "45.95.175.170"
