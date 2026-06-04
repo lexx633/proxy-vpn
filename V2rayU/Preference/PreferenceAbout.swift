@@ -26,10 +26,10 @@ final class PreferenceAboutViewController: NSViewController, SettingsPane {
         // fix: https://github.com/sindresorhus/Preferences/issues/31
         self.preferredContentSize = NSMakeSize(self.view.frame.size.width, self.view.frame.size.height);
         
-        self.VersionLabel.stringValue = "Version " + appVersion
+        self.VersionLabel.stringValue = "limm VPN \(LimmBuildInfo.version) #\(LimmBuildInfo.commit)"
 
         if let v2rayCoreVersion = UserDefaults.get(forKey: .xRayCoreVersion) {
-            self.V2rayCoreVersion.stringValue = "based on v2ray-core " + v2rayCoreVersion
+            self.V2rayCoreVersion.stringValue = "xray-core " + v2rayCoreVersion
         }
     }
 }

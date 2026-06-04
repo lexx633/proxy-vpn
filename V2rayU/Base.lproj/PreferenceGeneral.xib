@@ -97,17 +97,6 @@
                         <action selector="goFeedback:" target="-2" id="dvI-qJ-3yN"/>
                     </connections>
                 </button>
-                <textField verticalHuggingPriority="750" horizontalCompressionResistancePriority="250" fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="2M9-7e-aJI">
-                    <rect key="frame" x="64" y="56" width="324" height="62"/>
-                    <autoresizingMask key="autoresizingMask"/>
-                    <textFieldCell key="cell" selectable="YES" borderStyle="border" drawsBackground="YES" id="vHZ-BS-uFb">
-                        <font key="font" size="12" name="HelveticaNeue"/>
-                        <string key="title">~/.V2rayU/
-~/Library/Preferences/net.yanue.V2rayU.plist</string>
-                        <color key="textColor" name="secondaryLabelColor" catalog="System" colorSpace="catalog"/>
-                        <color key="backgroundColor" name="alternatingContentBackgroundColor" catalog="System" colorSpace="catalog"/>
-                    </textFieldCell>
-                </textField>
                 <button horizontalHuggingPriority="500" verticalHuggingPriority="750" fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="cPC-Na-pRr">
                     <rect key="frame" x="58" y="21" width="182" height="32"/>
                     <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
