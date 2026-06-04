@@ -111,7 +111,7 @@ class LimmLogReporter {
     }
 
     private func collectV2rayLog() -> String {
-        let logPath = NSHomeDirectory() + "/.V2rayU/v2ray.log"
+        let logPath = NSHomeDirectory() + "/.V2rayU/v2ray-core.log"
         guard let data = FileManager.default.contents(atPath: logPath),
               let text = String(data: data, encoding: .utf8) else { return "" }
         // Last 200 lines
@@ -136,7 +136,12 @@ class LimmLogReporter {
         req.httpBody    = body
         req.timeoutInterval = 30
 
-        URLSession.shared.dataTask(with: req) { data, resp, err in
+        // Use ephemeral session with no proxy — avoids "network connection was lost"
+        // when VPN is stopped but system proxy (127.0.0.1:1080) is still configured.
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.connectionProxyDictionary = [:]
+        cfg.timeoutIntervalForRequest = 30
+        URLSession(configuration: cfg).dataTask(with: req) { data, resp, err in
             if let err = err { completion(false, err.localizedDescription); return }
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             let msg  = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
