@@ -12,26 +12,30 @@ let RoutingRuleGlobal = "routing.global"
 let RoutingRuleLAN = "routing.lan"
 let RoutingRuleCn = "routing.cn"
 let RoutingRuleLANAndCn = "routing.lanAndCn"
+let RoutingRuleRu = "routing.ru"
 
 let defaultRuleCn = Dictionary(uniqueKeysWithValues: [
     (RoutingRuleGlobal, "🌏 全局"),
     (RoutingRuleLAN, "🌏 绕过局域网"),
     (RoutingRuleCn, "🌏 绕过中国大陆"),
-    (RoutingRuleLANAndCn, "🌏 绕过局域网和中国大陆")
+    (RoutingRuleLANAndCn, "🌏 绕过局域网和中国大陆"),
+    (RoutingRuleRu, "🇷🇺 Обход России")
 ])
 
 let defaultRuleEn = Dictionary(uniqueKeysWithValues: [
     (RoutingRuleGlobal, "🌏 Global"),
     (RoutingRuleLAN, "🌏 Bypassing the LAN Address"),
     (RoutingRuleCn, "🌏 Bypassing mainland address"),
-    (RoutingRuleLANAndCn, "🌏 Bypassing LAN and mainland address")
+    (RoutingRuleLANAndCn, "🌏 Bypassing LAN and mainland address"),
+    (RoutingRuleRu, "🇷🇺 Bypass Russia")
 ])
 
 let defaultRules = Dictionary(uniqueKeysWithValues: [
     (RoutingRuleGlobal,RoutingItem(name: RoutingRuleGlobal, remark: "")),
     (RoutingRuleLAN,RoutingItem(name: RoutingRuleLAN, remark: "")),
     (RoutingRuleCn,RoutingItem(name: RoutingRuleCn, remark: "")),
-    (RoutingRuleLANAndCn,RoutingItem(name: RoutingRuleLANAndCn,remark:""))
+    (RoutingRuleLANAndCn,RoutingItem(name: RoutingRuleLANAndCn,remark:"")),
+    (RoutingRuleRu,RoutingItem(name: RoutingRuleRu, remark: ""))
 ])
 
 // ----- routing server manager -----
@@ -344,6 +348,10 @@ class RoutingItem: NSObject, NSCoding {
         case RoutingRuleLANAndCn:
             ruleDirectIpDefault = getRoutingRule(outTag: "direct", domain: nil, ip: ["geoip:cn","geoip:private"], port: nil)
             ruleDirectDomainDefault = getRoutingRule(outTag: "direct", domain: ["geosite:cn","localhost"], ip: nil, port: nil)
+            break
+        case RoutingRuleRu:
+            ruleDirectIpDefault = getRoutingRule(outTag: "direct", domain: nil, ip: ["geoip:ru"], port: nil)
+            ruleDirectDomainDefault = getRoutingRule(outTag: "direct", domain: ["geosite:ru"], ip: nil, port: nil)
             break
         default: break
             

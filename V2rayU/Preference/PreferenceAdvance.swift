@@ -22,6 +22,7 @@ final class PreferenceAdvanceViewController: NSViewController, SettingsPane {
     @IBOutlet weak var pacPort: NSTextField!
     @IBOutlet weak var switchGap: NSTextField!
     @IBOutlet weak var switchCooldown: NSTextField!
+    @IBOutlet weak var bypassRussia: NSButton!
 
     @IBOutlet weak var enableUdp: NSButton!
     @IBOutlet weak var enableMux: NSButton!
@@ -69,6 +70,9 @@ final class PreferenceAdvanceViewController: NSViewController, SettingsPane {
         self.muxConcurrent.intValue = Int32(muxConcurrent) ?? 8
         self.switchGap.intValue      = Int32(switchGapVal)      ?? 50
         self.switchCooldown.intValue = Int32(switchCooldownVal) ?? 5
+
+        let curRoute = UserDefaults.get(forKey: .routingSelectedRule) ?? RoutingRuleGlobal
+        self.bypassRussia.state = (curRoute == RoutingRuleRu) ? .on : .off
     }
 
     @IBAction func saveSettings(_ sender: Any) {
@@ -110,6 +114,11 @@ final class PreferenceAdvanceViewController: NSViewController, SettingsPane {
         UserDefaults.set(forKey: .muxConcurrent, value: String(muxConcurrentVal))
         UserDefaults.standard.set(String(self.switchGap.intValue),      forKey: LimmConfig.switchGapKey)
         UserDefaults.standard.set(String(self.switchCooldown.intValue), forKey: LimmConfig.switchCooldownKey)
+
+        // Routing: bypass Russia or Global
+        let bypassRuVal = self.bypassRussia.state.rawValue > 0
+        UserDefaults.set(forKey: .routingSelectedRule, value: bypassRuVal ? RoutingRuleRu : RoutingRuleGlobal)
+
         print("self.sockHost.stringValue", self.sockHost.stringValue)
 
         var logLevelName = "info"

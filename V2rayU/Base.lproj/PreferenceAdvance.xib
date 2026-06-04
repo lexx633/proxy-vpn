@@ -18,6 +18,7 @@
                 <outlet property="pacPort" destination="SRQ-zG-lEW" id="jKr-ys-fLS"/>
                 <outlet property="switchGap" destination="ASG-sw-gap" id="ASG-sw-out"/>
                 <outlet property="switchCooldown" destination="ACD-sw-fld" id="ACD-sw-out"/>
+                <outlet property="bypassRussia" destination="BRU-sw-btn" id="BRU-sw-out"/>
                 <outlet property="saveBtn" destination="YJf-A4-mgF" id="k7j-Ly-8Uq"/>
                 <outlet property="sockHost" destination="Rfo-X1-n77" id="by8-Ln-cX3"/>
                 <outlet property="sockPort" destination="uGr-b9-5AH" id="yYa-iP-cqG"/>
@@ -214,6 +215,14 @@
                                 <rect key="frame" x="263" y="79" width="112" height="18"/>
                                 <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                                 <buttonCell key="cell" type="check" title="Enable sniffing" bezelStyle="regularSquare" imagePosition="left" state="on" inset="2" id="DUz-lv-lyg">
+                                    <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
+                                    <font key="font" metaFont="system"/>
+                                </buttonCell>
+                            </button>
+                            <button verticalHuggingPriority="750" fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="BRU-sw-btn">
+                                <rect key="frame" x="263" y="111" width="210" height="18"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
+                                <buttonCell key="cell" type="check" title="🇷🇺 Bypass Russia" bezelStyle="regularSquare" imagePosition="left" state="off" inset="2" id="BRU-sw-cel">
                                     <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
                                     <font key="font" metaFont="system"/>
                                 </buttonCell>
