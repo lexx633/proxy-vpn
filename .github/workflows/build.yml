@@ -96,17 +96,8 @@ jobs:
           cp -r "$APP_PATH" "$STAGE/V2rayU.app"
           ln -s /Applications "$STAGE/Applications"
 
-          # Instructions for Gatekeeper (first-launch warning)
-          python3 -c "
-f = open('$STAGE/README.txt', 'w')
-f.write('limm VPN -- Install\n\n')
-f.write('1. Drag V2rayU.app to the Applications folder (arrow shortcut ->)\n\n')
-f.write('2. First launch: macOS Gatekeeper warning appears.\n')
-f.write('   Fix A: right-click V2rayU.app -> Open -> Open\n')
-f.write('   Fix B: System Settings -> Privacy & Security -> Open Anyway\n\n')
-f.write('   This is a one-time step.\n')
-f.close()
-"
+          # Instructions for Gatekeeper (one line avoids YAML indentation issues)
+          python3 -c "open('$STAGE/README.txt','w').write('limm VPN Install\n\n1. Drag V2rayU.app to Applications\n2. First launch warning:\n   Right-click V2rayU.app -> Open -> Open\n   or: System Settings -> Privacy & Security -> Open Anyway\n   (one-time step)\n')"
 
           hdiutil create \
             -volname "limm VPN" \
