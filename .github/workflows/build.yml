@@ -89,7 +89,7 @@ jobs:
       - name: Create .dmg
         run: |
           APP_PATH="build/V2rayU.xcarchive/Products/Applications/V2rayU.app"
-          DMG_NAME="limm-vpn-mac.dmg"
+          DMG_NAME="proxy_mac.dmg"
 
           # Staging dir: app + /Applications shortcut (standard drag-and-drop layout)
           STAGE=$(mktemp -d)
@@ -138,17 +138,13 @@ jobs:
 
       - name: Activate .dmg on server
         run: |
-          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'ENDSSH'
-            HASH4="${{ env.SHORT_SHA }}"
-            HASH4="${HASH4: -4}"
-            VERSIONED="limm-vpn-mac_${HASH4}.dmg"
-            mv -f /tmp/limm-mac-upload/${{ env.DMG_NAME }} /var/www/limm/vpn/${VERSIONED}
-            chmod 644 /var/www/limm/vpn/${VERSIONED}
-            ln -sf ${VERSIONED} /var/www/limm/vpn/limm-vpn-mac.dmg
-            printf '{"version":"%s","build":"%s"}\n' "${{ env.VERSION }}" "${{ env.SHORT_SHA }}" \
-              > /var/www/limm/vpn/mac-info.json
-            ls -lh /var/www/limm/vpn/${VERSIONED} /var/www/limm/vpn/limm-vpn-mac.dmg
-          ENDSSH
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "mv -f /tmp/limm-mac-upload/proxy_mac.dmg /var/www/limm/vpn/proxy_mac.dmg && \
+             chmod 644 /var/www/limm/vpn/proxy_mac.dmg && \
+             echo 'window.PROXY_VER={\"ver\":\"${{ env.VERSION }}\",\"url\":\"/vpn/proxy_mac.dmg\"};' \
+               > /var/www/limm/vpn/proxy-version.js && \
+             chmod 644 /var/www/limm/vpn/proxy-version.js && \
+             echo 'Deployed proxy_mac.dmg v${{ env.VERSION }}'"
 
       # ── Create GitHub Release ──────────────────────────────────
       - name: Create GitHub release

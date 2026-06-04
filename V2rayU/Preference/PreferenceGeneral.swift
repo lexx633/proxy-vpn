@@ -43,10 +43,14 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
     // MARK: - Limm section (programmatic)
 
     private func buildLimmSection() {
-        let origH: CGFloat = view.frame.height
+        // Hardcoded NIB dimensions (PreferenceGeneral.xib root view: 700×360).
+        // Do NOT read view.frame here — in viewDidLoad the window is not yet set,
+        // so frame can be zero even after layoutSubtreeIfNeeded().
+        let nibW:  CGFloat = 700
+        let nibH:  CGFloat = 360
         let addH:  CGFloat = 155
-        view.frame.size.height = origH + addH
-        preferredContentSize   = NSSize(width: view.frame.width, height: view.frame.height)
+        view.frame.size.height = nibH + addH
+        preferredContentSize   = NSSize(width: nibW, height: nibH + addH)
 
         // Box container
         limmBox = NSBox()
@@ -86,7 +90,7 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
 
         // limmBox: pinned below NIB content (view is flipped — y=0 at top).
         NSLayoutConstraint.activate([
-            limmBox.topAnchor.constraint(equalTo: view.topAnchor, constant: origH + 8),
+            limmBox.topAnchor.constraint(equalTo: view.topAnchor, constant: nibH + 8),
             limmBox.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             limmBox.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             limmBox.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8),
