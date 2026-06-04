@@ -151,6 +151,9 @@ jobs:
           ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
             "mv -f /tmp/limm-mac-upload/proxy_mac.dmg /var/www/limm/vpn/proxy_mac.dmg && \
              chmod 644 /var/www/limm/vpn/proxy_mac.dmg && \
+             echo '{\"version\":\"${{ env.VERSION }}\",\"build\":\"${{ env.SHORT_SHA }}\"}' \
+               > /var/www/limm/vpn/proxy-mac-info.json && \
+             chmod 644 /var/www/limm/vpn/proxy-mac-info.json && \
              echo 'window.PROXY_VER={\"ver\":\"${{ env.VERSION }}\",\"url\":\"/vpn/proxy_mac.dmg\"};' \
                > /var/www/limm/vpn/proxy-version.js && \
              chmod 644 /var/www/limm/vpn/proxy-version.js && \

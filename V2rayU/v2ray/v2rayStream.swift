@@ -62,11 +62,18 @@ struct V2rayStreamSettings: Codable {
 
 struct TlsSettings: Codable {
     var serverName: String = ""
-    var allowInsecure: Bool = true
-    var allowInsecureCiphers: Bool?
+    // allowInsecure kept as a stored property for UI compat but NOT encoded —
+    // the field was removed in Xray 26.x (replaced by pinnedPeerCertSha256).
+    var allowInsecure: Bool = false
+    var allowInsecureCiphers: Bool? = nil
     var certificates: TlsCertificates?
-    var alpn: [String] = [""]
+    var alpn: [String] = []  // default empty; [""] was invalid in Xray 26.x
     var fingerprint: String = "chrome" // 必填，使用 tls 库模拟客户端 TLS 指纹
+
+    // Exclude allowInsecure / allowInsecureCiphers from JSON output
+    enum CodingKeys: String, CodingKey {
+        case serverName, certificates, alpn, fingerprint
+    }
 }
 
 struct RealitySettings: Codable {

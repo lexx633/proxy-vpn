@@ -902,7 +902,7 @@ class V2rayConfig: NSObject {
                 self.securityTls.serverName = transport.xtlsSettings!.serverName
                 self.securityTls.allowInsecure = transport.xtlsSettings!.allowInsecure
             }
-            
+
             if transport.tlsSettings != nil {
                 self.securityTls.serverName = transport.tlsSettings!.serverName
                 self.securityTls.fingerprint = transport.tlsSettings!.fingerprint
@@ -968,9 +968,10 @@ class V2rayConfig: NSObject {
             tlsSettings.serverName = settings["serverName"].stringValue
             tlsSettings.alpn = settings["alpn"].arrayValue.map {
                 $0.stringValue
-            }
+            }.filter { !$0.isEmpty } // strip invalid empty strings
             tlsSettings.allowInsecure = settings["allowInsecure"].boolValue
             tlsSettings.allowInsecureCiphers = settings["allowInsecureCiphers"].boolValue
+            // allowInsecure is stored but NOT encoded to JSON (CodingKeys excludes it, Xray 26.x removed it)
             // certificates
             if settings["certificates"].dictionaryValue.count > 0 {
                 var certificates = TlsCertificates()
@@ -995,7 +996,7 @@ class V2rayConfig: NSObject {
             tlsSettings.fingerprint = settings["fingerprint"].stringValue  // 必填，使用 uTLS 库模拟客户端 TLS 指纹
             tlsSettings.alpn = settings["alpn"].arrayValue.map {
                 $0.stringValue
-            }
+            }.filter { !$0.isEmpty }
             tlsSettings.allowInsecure = settings["allowInsecure"].boolValue
             tlsSettings.allowInsecureCiphers = settings["allowInsecureCiphers"].boolValue
             // certificates
