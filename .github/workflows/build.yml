@@ -85,16 +85,24 @@ jobs:
 
           ls build/V2rayU.xcarchive/Products/Applications/
 
-      # ── Package as .dmg ───────────────────────────────────────
+      # ── Package as .dmg (app + Applications symlink for drag-and-drop) ──
       - name: Create .dmg
         run: |
           APP_PATH="build/V2rayU.xcarchive/Products/Applications/V2rayU.app"
           DMG_NAME="limm-vpn-mac.dmg"
+
+          # Staging dir: app + /Applications shortcut (standard drag-and-drop layout)
+          STAGE=$(mktemp -d)
+          cp -r "$APP_PATH" "$STAGE/V2rayU.app"
+          ln -s /Applications "$STAGE/Applications"
+
           hdiutil create \
             -volname "limm VPN" \
-            -srcfolder "$APP_PATH" \
+            -srcfolder "$STAGE" \
             -ov -format UDZO \
             "build/$DMG_NAME"
+
+          rm -rf "$STAGE"
           echo "DMG_NAME=$DMG_NAME" >> $GITHUB_ENV
           echo "DMG_PATH=build/$DMG_NAME" >> $GITHUB_ENV
 
