@@ -48,14 +48,11 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         // so frame can be zero even after layoutSubtreeIfNeeded().
         let nibW:  CGFloat = 700
         let nibH:  CGFloat = 360
-        let addH:  CGFloat = 220   // expanded to fit proxy info block
+        let addH:  CGFloat = 130
         view.frame.size.height = nibH + addH
         preferredContentSize   = NSSize(width: nibW, height: nibH + addH)
 
-        // Read current proxy ports
-        let socksPort = UserDefaults.get(forKey: .localSockPort) ?? "1080"
-        let httpPort  = UserDefaults.get(forKey: .localHttpPort) ?? "1087"
-        let mode      = RunMode(rawValue: UserDefaults.get(forKey: .runMode) ?? "global") ?? .global
+        let mode = RunMode(rawValue: UserDefaults.get(forKey: .runMode) ?? "global") ?? .global
 
         // ── Box container ────────────────────────────────────────
         limmBox = NSBox()
@@ -63,39 +60,6 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         limmBox.titlePosition = .atTop
         limmBox.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(limmBox)
-
-        // ── Proxy info block ─────────────────────────────────────
-        // Header label
-        let proxyHeader = NSTextField(labelWithString: "Настройки прокси:")
-        proxyHeader.font = NSFont.boldSystemFont(ofSize: 12)
-        proxyHeader.translatesAutoresizingMaskIntoConstraints = false
-        limmBox.addSubview(proxyHeader)
-
-        // SOCKS5 row
-        let socksLabel = NSTextField(labelWithString: "SOCKS5")
-        socksLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        socksLabel.textColor = .secondaryLabelColor
-        socksLabel.translatesAutoresizingMaskIntoConstraints = false
-        limmBox.addSubview(socksLabel)
-
-        let socksValue = NSTextField(labelWithString: "127.0.0.1 : \(socksPort)")
-        socksValue.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .medium)
-        socksValue.isSelectable = true
-        socksValue.translatesAutoresizingMaskIntoConstraints = false
-        limmBox.addSubview(socksValue)
-
-        // HTTP row
-        let httpLabel = NSTextField(labelWithString: "HTTP")
-        httpLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        httpLabel.textColor = .secondaryLabelColor
-        httpLabel.translatesAutoresizingMaskIntoConstraints = false
-        limmBox.addSubview(httpLabel)
-
-        let httpValue = NSTextField(labelWithString: "127.0.0.1 : \(httpPort)")
-        httpValue.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .medium)
-        httpValue.isSelectable = true
-        httpValue.translatesAutoresizingMaskIntoConstraints = false
-        limmBox.addSubview(httpValue)
 
         // ── Proxy mode ───────────────────────────────────────────
         modeLabel = NSTextField(labelWithString: "Режим прокси:")
@@ -125,8 +89,7 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         limmBox.addSubview(sendLogButton)
 
         // ── Constraints ──────────────────────────────────────────
-        let col1: CGFloat = 16   // left edge
-        let col2: CGFloat = 80   // value column
+        let col1: CGFloat = 16
 
         NSLayoutConstraint.activate([
             // limmBox below NIB content
@@ -135,28 +98,8 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
             limmBox.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             limmBox.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8),
 
-            // Proxy info header
-            proxyHeader.topAnchor.constraint(equalTo: limmBox.topAnchor, constant: 20),
-            proxyHeader.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
-
-            // SOCKS5 row
-            socksLabel.topAnchor.constraint(equalTo: proxyHeader.bottomAnchor, constant: 10),
-            socksLabel.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
-            socksLabel.widthAnchor.constraint(equalToConstant: col2),
-
-            socksValue.centerYAnchor.constraint(equalTo: socksLabel.centerYAnchor),
-            socksValue.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1 + col2),
-
-            // HTTP row
-            httpLabel.topAnchor.constraint(equalTo: socksLabel.bottomAnchor, constant: 6),
-            httpLabel.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
-            httpLabel.widthAnchor.constraint(equalToConstant: col2),
-
-            httpValue.centerYAnchor.constraint(equalTo: httpLabel.centerYAnchor),
-            httpValue.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1 + col2),
-
             // Mode
-            modeLabel.topAnchor.constraint(equalTo: httpLabel.bottomAnchor, constant: 16),
+            modeLabel.topAnchor.constraint(equalTo: limmBox.topAnchor, constant: 20),
             modeLabel.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
 
             modeControl.centerYAnchor.constraint(equalTo: modeLabel.centerYAnchor),
