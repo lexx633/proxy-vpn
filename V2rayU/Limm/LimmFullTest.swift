@@ -264,8 +264,9 @@ final class LimmFullTest {
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+        // 35s: XHTTP server closes first POST after ~20s on reconnect, client retries → need slack.
         proc.arguments = [
-            "--max-time", "15", "-s",
+            "--max-time", "35", "-s",
             "--socks5", "127.0.0.1:\(socksPort)",
             "https://api.ipify.org",
         ]
