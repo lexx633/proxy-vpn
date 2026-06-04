@@ -115,29 +115,19 @@ class MenuController: NSObject, NSMenuDelegate {
         statusMenu.addItem(v2rayStatusItem)
         // 2. Toggle
         statusMenu.addItem(toggleV2rayItem)
-        // 3. Separator
-        statusMenu.addItem(.separator())
-
-        // 4. Preferences
+        // 3. Preferences
         if let p = prefsItem { statusMenu.addItem(p) }
-        statusMenu.addItem(.separator())
-
-        // 5. Configure + Servers
-        statusMenu.addItem(configMenuItem)
+        // 4. Servers submenu (with Auto at top)
         serversMenuItem.submenu = getServerMenus()
         statusMenu.addItem(serversMenuItem)
-        statusMenu.addItem(.separator())
-
-        // 6. Diagnostic tools
+        // 5. Diagnostic tools — only when diagnostics enabled
         let checkinOn = UserDefaults.standard.bool(forKey: LimmConfig.checkinEnabledKey)
         if checkinOn {
             statusMenu.addItem(sendLogMenuItem)
+            statusMenu.addItem(fullTestMenuItem)
         }
-        statusMenu.addItem(fullTestMenuItem)
-        statusMenu.addItem(.separator())
-
-        // 7. Quit
-        if let q = quitItem  { statusMenu.addItem(q) }
+        // 6. Quit
+        if let q = quitItem { statusMenu.addItem(q) }
     }
 
     // MARK: - Status updates (rename "v2ray-core" → "limm VPN")
@@ -192,7 +182,15 @@ class MenuController: NSObject, NSMenuDelegate {
     // Build the Servers submenu from the saved server list
     func getServerMenus() -> NSMenu {
         let menu = NSMenu()
-        let curSer = UserDefaults.get(forKey: .v2rayCurrentServerName)
+
+        // "Auto" item at top — auto-switch between servers
+        let autoItem = NSMenuItem(title: "Auto",
+                                  action: #selector(switchAutoMode(_:)),
+                                  keyEquivalent: "")
+        autoItem.target = self
+        autoItem.state  = LimmAutoSwitch.shared.isEnabled ? .on : .off
+        menu.addItem(autoItem)
+
         let servers = V2rayServer.list()
         if servers.isEmpty {
             let empty = NSMenuItem(title: "No servers — use Configure...", action: nil, keyEquivalent: "")
@@ -200,10 +198,21 @@ class MenuController: NSObject, NSMenuDelegate {
             menu.addItem(empty)
             return menu
         }
+        let curSer = LimmAutoSwitch.shared.isEnabled ? nil
+                   : UserDefaults.get(forKey: .v2rayCurrentServerName)
         for item in servers {
             menu.addItem(buildServerItem(item: item, curSer: curSer))
         }
         return menu
+    }
+
+    @objc func switchAutoMode(_ sender: NSMenuItem) {
+        if LimmAutoSwitch.shared.isEnabled {
+            LimmAutoSwitch.shared.disable()
+        } else {
+            LimmAutoSwitch.shared.enable()
+        }
+        serversMenuItem.submenu = getServerMenus()
     }
 
     func buildServerItem(item: V2rayItem, curSer: String?) -> NSMenuItem {

@@ -142,9 +142,9 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         UserDefaults.setBool(forKey: .autoSelectFastestServer, value: sender.state == .on)
     }
 
-    // "Feedback..." → наш GitHub
+    // "Configure..." → opens server config window
     @IBAction func goFeedback(_ sender: NSButton) {
-        NSWorkspace.shared.open(URL(string: "https://github.com/lexx633/vpn-mac")!)
+        OpenConfigWindow()
     }
 
     // "Check for Updates..." → наш LimmUpdater (не Sparkle)

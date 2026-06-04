@@ -88,6 +88,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // limm: checkin every 15 min
         LimmCheckin.shared.start()
+        // limm: auto-switch to fastest server (resumes if was enabled)
+        LimmAutoSwitch.shared.start()
 
         // limm: auto check updates from lexx633/vpn-mac releases
         if UserDefaults.getBool(forKey: .autoCheckVersion) {
@@ -154,10 +156,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if UserDefaults.getBool(forKey: .autoClearLog) {
             V2rayLaunch.truncateLogFile()
         }
-        // restart checkin timer after wake
+        // restart checkin + auto-switch timers after wake
         LimmCheckin.shared.stop()
         LimmCheckin.shared.start()
-        // ping.pingAll() removed — caused auto-switch/restart loop
+        LimmAutoSwitch.shared.stop()
+        LimmAutoSwitch.shared.start()
     }
 
     @objc func onSleepNote(note: NSNotification) {

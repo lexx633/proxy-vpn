@@ -16,6 +16,7 @@
                 <outlet property="logLevel" destination="RkL-Hx-uyr" id="qFb-PC-Iil"/>
                 <outlet property="muxConcurrent" destination="13S-5w-YMH" id="ijT-5C-kyu"/>
                 <outlet property="pacPort" destination="SRQ-zG-lEW" id="jKr-ys-fLS"/>
+                <outlet property="switchGap" destination="ASG-sw-gap" id="ASG-sw-out"/>
                 <outlet property="saveBtn" destination="YJf-A4-mgF" id="k7j-Ly-8Uq"/>
                 <outlet property="sockHost" destination="Rfo-X1-n77" id="by8-Ln-cX3"/>
                 <outlet property="sockPort" destination="uGr-b9-5AH" id="yYa-iP-cqG"/>
@@ -159,7 +160,7 @@
                                     <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
                                 </textFieldCell>
                             </textField>
-                            <textField focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" fixedFrame="YES" allowsCharacterPickerTouchBarItem="YES" translatesAutoresizingMaskIntoConstraints="NO" id="ZNZ-uI-32p">
+                            <textField focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" fixedFrame="YES" allowsCharacterPickerTouchBarItem="YES" hidden="YES" translatesAutoresizingMaskIntoConstraints="NO" id="ZNZ-uI-32p">
                                 <rect key="frame" x="7" y="111" width="143" height="17"/>
                                 <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                                 <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" sendsActionOnEndEditing="YES" alignment="right" title="PAC Port:" id="you-iw-OS5">
@@ -168,7 +169,7 @@
                                     <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
                                 </textFieldCell>
                             </textField>
-                            <textField focusRingType="none" verticalHuggingPriority="750" fixedFrame="YES" allowsCharacterPickerTouchBarItem="YES" translatesAutoresizingMaskIntoConstraints="NO" id="SRQ-zG-lEW">
+                            <textField focusRingType="none" verticalHuggingPriority="750" fixedFrame="YES" allowsCharacterPickerTouchBarItem="YES" hidden="YES" translatesAutoresizingMaskIntoConstraints="NO" id="SRQ-zG-lEW">
                                 <rect key="frame" x="175" y="107" width="56" height="22"/>
                                 <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                                 <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" selectable="YES" editable="YES" sendsActionOnEndEditing="YES" state="on" borderStyle="bezel" placeholderString=" 1087" drawsBackground="YES" id="cs0-w0-4jp">
@@ -216,6 +217,28 @@
                                     <font key="font" metaFont="system"/>
                                 </buttonCell>
                             </button>
+                            <textField focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" fixedFrame="YES" allowsCharacterPickerTouchBarItem="YES" translatesAutoresizingMaskIntoConstraints="NO" id="ASL-sw-lbl">
+                                <rect key="frame" x="7" y="111" width="143" height="17"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
+                                <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" sendsActionOnEndEditing="YES" alignment="right" title="Switch gap (ms):" id="ASL-sw-cel">
+                                    <font key="font" metaFont="system"/>
+                                    <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
+                                    <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
+                                </textFieldCell>
+                            </textField>
+                            <textField focusRingType="none" verticalHuggingPriority="750" fixedFrame="YES" allowsCharacterPickerTouchBarItem="YES" translatesAutoresizingMaskIntoConstraints="NO" id="ASG-sw-gap">
+                                <rect key="frame" x="175" y="107" width="56" height="22"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
+                                <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" selectable="YES" editable="YES" sendsActionOnEndEditing="YES" state="on" borderStyle="bezel" placeholderString=" 50" drawsBackground="YES" id="ASG-sw-cll">
+                                    <numberFormatter key="formatter" formatterBehavior="default10_4" numberStyle="decimal" minimumIntegerDigits="1" maximumIntegerDigits="9999" maximumFractionDigits="0" id="ASG-sw-fmt"/>
+                                    <font key="font" metaFont="system"/>
+                                    <color key="textColor" name="controlTextColor" catalog="System" colorSpace="catalog"/>
+                                    <color key="backgroundColor" name="textBackgroundColor" catalog="System" colorSpace="catalog"/>
+                                    <allowedInputSourceLocales>
+                                        <string>NSAllRomanInputSourcesLocaleIdentifier</string>
+                                    </allowedInputSourceLocales>
+                                </textFieldCell>
+                            </textField>
                             <textField focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="1Aj-RG-gYn">
                                 <rect key="frame" x="10" y="26" width="359" height="17"/>
                                 <autoresizingMask key="autoresizingMask"/>

@@ -11,7 +11,7 @@ import Preferences
 
 final class PreferenceAdvanceViewController: NSViewController, SettingsPane {
     let preferencePaneIdentifier: Settings.PaneIdentifier = .advanceTab
-    let preferencePaneTitle = "Local Ports"
+    let preferencePaneTitle = "Proxy"
     let toolbarItemIcon = NSImage(named: NSImage.advancedName)!
 
     @IBOutlet weak var saveBtn: NSButtonCell!
@@ -20,6 +20,7 @@ final class PreferenceAdvanceViewController: NSViewController, SettingsPane {
     @IBOutlet weak var sockHost: NSTextField!
     @IBOutlet weak var httpHost: NSTextField!
     @IBOutlet weak var pacPort: NSTextField!
+    @IBOutlet weak var switchGap: NSTextField!
 
     @IBOutlet weak var enableUdp: NSButton!
     @IBOutlet weak var enableMux: NSButton!
@@ -49,6 +50,7 @@ final class PreferenceAdvanceViewController: NSViewController, SettingsPane {
         let localHttpHost = UserDefaults.get(forKey: .localHttpHost) ?? "127.0.0.1"
         let localPacPort = UserDefaults.get(forKey: .localPacPort) ?? "11085"
         let muxConcurrent = UserDefaults.get(forKey: .muxConcurrent) ?? "8"
+        let switchGapVal = UserDefaults.standard.string(forKey: LimmConfig.switchGapKey) ?? "50"
 
         // select item
         print("host", localSockHost, localHttpHost)
@@ -62,7 +64,8 @@ final class PreferenceAdvanceViewController: NSViewController, SettingsPane {
         self.httpPort.stringValue = localHttpPort
         self.httpHost.stringValue = localHttpHost
         self.pacPort.stringValue = localPacPort
-        self.muxConcurrent.intValue = Int32(muxConcurrent) ?? 8;
+        self.muxConcurrent.intValue = Int32(muxConcurrent) ?? 8
+        self.switchGap.intValue = Int32(switchGapVal) ?? 50
     }
 
     @IBAction func saveSettings(_ sender: Any) {
@@ -102,6 +105,7 @@ final class PreferenceAdvanceViewController: NSViewController, SettingsPane {
         UserDefaults.set(forKey: .localSockHost, value: self.sockHost.stringValue)
         UserDefaults.set(forKey: .localPacPort, value: pacPortVal)
         UserDefaults.set(forKey: .muxConcurrent, value: String(muxConcurrentVal))
+        UserDefaults.standard.set(String(self.switchGap.intValue), forKey: LimmConfig.switchGapKey)
         print("self.sockHost.stringValue", self.sockHost.stringValue)
 
         var logLevelName = "info"

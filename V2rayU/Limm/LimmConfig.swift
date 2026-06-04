@@ -25,6 +25,8 @@ enum LimmConfig {
     // UserDefaults keys
     static let uidKey            = "limmClientUID"
     static let checkinEnabledKey = "limmCheckinEnabled"
+    static let autoServerKey     = "limmAutoServer"     // Bool — auto-switch enabled
+    static let switchGapKey      = "limmAutoSwitchGap"  // String — gap threshold in ms (default "50")
 
     // Stable per-device UUID (auto-generated on first launch)
     static func clientUID() -> String {
