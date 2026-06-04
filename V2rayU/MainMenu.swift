@@ -46,11 +46,20 @@ class MenuController: NSObject, NSMenuDelegate {
     }()
     private lazy var sendLogSeparator = NSMenuItem.separator()
 
+    // "Full Test..." — пошаговая диагностика, всегда доступна
+    private lazy var fullTestMenuItem: NSMenuItem = {
+        let item = NSMenuItem(title: "Full Test...",
+                              action: #selector(runFullTest(_:)),
+                              keyEquivalent: "")
+        item.target = self
+        return item
+    }()
+
     // Saved references for Preferences and Quit (set in simplifyMenu)
     private var prefsItem: NSMenuItem?
     private var quitItem:  NSMenuItem?
 
-    /// Rebuild menu to: status / toggle / ─── / [Send Diagnostic Log /  ─── /] Preferences / Quit
+    /// Rebuild menu to: status / toggle / ─── / Preferences / ─── / Configure / Servers / ─── / [Send Diagnostic Log /] Full Test... / ─── / Quit
     private func simplifyMenu() {
         // Find Preferences and Quit before clearing
         for item in statusMenu.items {
@@ -119,12 +128,13 @@ class MenuController: NSObject, NSMenuDelegate {
         statusMenu.addItem(serversMenuItem)
         statusMenu.addItem(.separator())
 
-        // 6. "Send Diagnostic Log" — only when checkin enabled
+        // 6. Diagnostic tools
         let checkinOn = UserDefaults.standard.bool(forKey: LimmConfig.checkinEnabledKey)
         if checkinOn {
             statusMenu.addItem(sendLogMenuItem)
-            statusMenu.addItem(.separator())
         }
+        statusMenu.addItem(fullTestMenuItem)
+        statusMenu.addItem(.separator())
 
         // 7. Quit
         if let q = quitItem  { statusMenu.addItem(q) }
@@ -211,6 +221,10 @@ class MenuController: NSObject, NSMenuDelegate {
     // MARK: - IBActions (kept for xib wiring; most are no-ops in simplified UI)
 
     @IBAction func openLogs(_ sender: NSMenuItem) { OpenLogs() }
+
+    @objc func runFullTest(_ sender: Any) {
+        LimmFullTest.shared.run()
+    }
 
     @objc func sendDiagnosticLog(_ sender: Any) {
         let alert = NSAlert()

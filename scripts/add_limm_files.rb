@@ -12,6 +12,7 @@ LIMM_FILES   = %w[
   V2rayU/Limm/LimmCheckin.swift
   V2rayU/Limm/LimmLogReporter.swift
   V2rayU/Limm/LimmUpdater.swift
+  V2rayU/Limm/LimmFullTest.swift
   V2rayU/Limm/LimmSecrets.swift
 ]
 

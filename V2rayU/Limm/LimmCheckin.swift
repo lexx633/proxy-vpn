@@ -89,7 +89,9 @@ class LimmCheckin {
 
     // MARK: - Main checkin
 
-    private func perform() {
+    /// Synchronously runs all curl probes, then fires HTTP POST (async, fire-and-forget).
+    /// Called by the background timer and by LimmFullTest for immediate one-shot runs.
+    func perform() {
         let token   = LimmConfig.token
         let uid     = LimmConfig.clientUID()
         let socksPort = UserDefaults.standard.integer(forKey: "localSockPort")
