@@ -48,64 +48,127 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         // so frame can be zero even after layoutSubtreeIfNeeded().
         let nibW:  CGFloat = 700
         let nibH:  CGFloat = 360
-        let addH:  CGFloat = 155
+        let addH:  CGFloat = 220   // expanded to fit proxy info block
         view.frame.size.height = nibH + addH
         preferredContentSize   = NSSize(width: nibW, height: nibH + addH)
 
-        // Box container
+        // Read current proxy ports
+        let socksPort = UserDefaults.get(forKey: .localSockPort) ?? "1080"
+        let httpPort  = UserDefaults.get(forKey: .localHttpPort) ?? "1087"
+        let mode      = RunMode(rawValue: UserDefaults.get(forKey: .runMode) ?? "global") ?? .global
+
+        // ── Box container ────────────────────────────────────────
         limmBox = NSBox()
         limmBox.title         = "limm VPN Agent"
         limmBox.titlePosition = .atTop
         limmBox.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(limmBox)
 
-        // Proxy mode label
+        // ── Proxy info block ─────────────────────────────────────
+        // Header label
+        let proxyHeader = NSTextField(labelWithString: "Настройки прокси:")
+        proxyHeader.font = NSFont.boldSystemFont(ofSize: 12)
+        proxyHeader.translatesAutoresizingMaskIntoConstraints = false
+        limmBox.addSubview(proxyHeader)
+
+        // SOCKS5 row
+        let socksLabel = NSTextField(labelWithString: "SOCKS5")
+        socksLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        socksLabel.textColor = .secondaryLabelColor
+        socksLabel.translatesAutoresizingMaskIntoConstraints = false
+        limmBox.addSubview(socksLabel)
+
+        let socksValue = NSTextField(labelWithString: "127.0.0.1 : \(socksPort)")
+        socksValue.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .medium)
+        socksValue.isSelectable = true
+        socksValue.translatesAutoresizingMaskIntoConstraints = false
+        limmBox.addSubview(socksValue)
+
+        // HTTP row
+        let httpLabel = NSTextField(labelWithString: "HTTP")
+        httpLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        httpLabel.textColor = .secondaryLabelColor
+        httpLabel.translatesAutoresizingMaskIntoConstraints = false
+        limmBox.addSubview(httpLabel)
+
+        let httpValue = NSTextField(labelWithString: "127.0.0.1 : \(httpPort)")
+        httpValue.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .medium)
+        httpValue.isSelectable = true
+        httpValue.translatesAutoresizingMaskIntoConstraints = false
+        limmBox.addSubview(httpValue)
+
+        // ── Proxy mode ───────────────────────────────────────────
         modeLabel = NSTextField(labelWithString: "Режим прокси:")
         modeLabel.translatesAutoresizingMaskIntoConstraints = false
         limmBox.addSubview(modeLabel)
 
-        // Segmented control: Global / PAC / Manual
         modeControl = NSSegmentedControl(labels: ["Global", "PAC", "Manual"],
                                          trackingMode: .selectOne,
                                          target: self,
                                          action: #selector(proxyModeChanged(_:)))
         modeControl.translatesAutoresizingMaskIntoConstraints = false
-        let mode = RunMode(rawValue: UserDefaults.get(forKey: .runMode) ?? "global") ?? .global
         modeControl.selectedSegment = mode == .global ? 0 : (mode == .pac ? 1 : 2)
         limmBox.addSubview(modeControl)
 
-        // Checkin toggle
+        // ── Checkin toggle ───────────────────────────────────────
         checkinCheckbox = NSButton(checkboxWithTitle: "Отправлять диагностику на limm.space каждые 15 мин",
                                    target: self, action: #selector(checkinToggled(_:)))
         checkinCheckbox.translatesAutoresizingMaskIntoConstraints = false
         checkinCheckbox.state = UserDefaults.standard.bool(forKey: LimmConfig.checkinEnabledKey) ? .on : .off
         limmBox.addSubview(checkinCheckbox)
 
-        // Send log button
+        // ── Send log button ──────────────────────────────────────
         sendLogButton = NSButton(title: "Send Diagnostic Log",
                                  target: self, action: #selector(sendDiagnosticLog(_:)))
         sendLogButton.bezelStyle = .rounded
         sendLogButton.translatesAutoresizingMaskIntoConstraints = false
         limmBox.addSubview(sendLogButton)
 
-        // limmBox: pinned below NIB content (view is flipped — y=0 at top).
+        // ── Constraints ──────────────────────────────────────────
+        let col1: CGFloat = 16   // left edge
+        let col2: CGFloat = 80   // value column
+
         NSLayoutConstraint.activate([
+            // limmBox below NIB content
             limmBox.topAnchor.constraint(equalTo: view.topAnchor, constant: nibH + 8),
             limmBox.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             limmBox.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             limmBox.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8),
 
-            modeLabel.topAnchor.constraint(equalTo: limmBox.topAnchor, constant: 24),
-            modeLabel.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: 16),
+            // Proxy info header
+            proxyHeader.topAnchor.constraint(equalTo: limmBox.topAnchor, constant: 20),
+            proxyHeader.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
+
+            // SOCKS5 row
+            socksLabel.topAnchor.constraint(equalTo: proxyHeader.bottomAnchor, constant: 10),
+            socksLabel.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
+            socksLabel.widthAnchor.constraint(equalToConstant: col2),
+
+            socksValue.centerYAnchor.constraint(equalTo: socksLabel.centerYAnchor),
+            socksValue.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1 + col2),
+
+            // HTTP row
+            httpLabel.topAnchor.constraint(equalTo: socksLabel.bottomAnchor, constant: 6),
+            httpLabel.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
+            httpLabel.widthAnchor.constraint(equalToConstant: col2),
+
+            httpValue.centerYAnchor.constraint(equalTo: httpLabel.centerYAnchor),
+            httpValue.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1 + col2),
+
+            // Mode
+            modeLabel.topAnchor.constraint(equalTo: httpLabel.bottomAnchor, constant: 16),
+            modeLabel.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
 
             modeControl.centerYAnchor.constraint(equalTo: modeLabel.centerYAnchor),
             modeControl.leadingAnchor.constraint(equalTo: modeLabel.trailingAnchor, constant: 12),
 
+            // Checkin
             checkinCheckbox.topAnchor.constraint(equalTo: modeLabel.bottomAnchor, constant: 14),
-            checkinCheckbox.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: 16),
+            checkinCheckbox.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
 
+            // Send log
             sendLogButton.topAnchor.constraint(equalTo: checkinCheckbox.bottomAnchor, constant: 12),
-            sendLogButton.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: 16),
+            sendLogButton.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
             sendLogButton.bottomAnchor.constraint(equalTo: limmBox.bottomAnchor, constant: -16),
         ])
     }
