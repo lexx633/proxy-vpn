@@ -97,18 +97,16 @@ jobs:
           ln -s /Applications "$STAGE/Applications"
 
           # Instructions for Gatekeeper (first-launch warning)
-          cat > "$STAGE/Как установить.txt" << 'ENDTXT'
-limm VPN — Установка
-
-1. Перетащите V2rayU.app в папку Applications (→)
-
-2. При первом запуске macOS покажет предупреждение.
-   Решение А: щёлкните правой кнопкой мыши → «Открыть» → «Открыть»
-   Решение Б: Системные настройки → Конфиденциальность и защита
-               → прокрутите вниз → «Открыть всё равно»
-
-   Это одноразовая процедура — затем приложение открывается нормально.
-ENDTXT
+          python3 -c "
+f = open('$STAGE/README.txt', 'w')
+f.write('limm VPN -- Install\n\n')
+f.write('1. Drag V2rayU.app to the Applications folder (arrow shortcut ->)\n\n')
+f.write('2. First launch: macOS Gatekeeper warning appears.\n')
+f.write('   Fix A: right-click V2rayU.app -> Open -> Open\n')
+f.write('   Fix B: System Settings -> Privacy & Security -> Open Anyway\n\n')
+f.write('   This is a one-time step.\n')
+f.close()
+"
 
           hdiutil create \
             -volname "limm VPN" \
