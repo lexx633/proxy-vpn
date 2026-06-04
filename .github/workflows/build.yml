@@ -2,7 +2,7 @@ name: Build & Deploy limm VPN .dmg
 
 on:
   push:
-    branches: [ limm-main ]
+    branches: [ main ]
   workflow_dispatch:   # ручной запуск
 
 permissions:

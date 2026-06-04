@@ -207,9 +207,10 @@ final class LimmFullTest {
         }
 
         // 6. Запуск VPN #2 ────────────────────────────────────────────
+        // Extra sleep: after stop+restart, xray needs ~6s to rebind SOCKS port.
         step("Запуск VPN #2") {
             DispatchQueue.main.sync { V2rayLaunch.startV2rayCore() }
-            Thread.sleep(forTimeInterval: 4)
+            Thread.sleep(forTimeInterval: 7)
             let on = UserDefaults.standard.bool(forKey: "v2rayTurnOn")
             return (on, on ? "running" : "не запустился")
         }
