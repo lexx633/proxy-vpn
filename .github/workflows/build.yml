@@ -28,8 +28,10 @@ jobs:
 
       # ── Upgrade bundled Xray to latest (server runs 26.x; 25.x has XHTTP incompatibility) ──
       - name: Upgrade bundled xray-core
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          XRAY_VER=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
+          XRAY_VER=$(curl -s -H "Authorization: Bearer ${GH_TOKEN}" https://api.github.com/repos/XTLS/Xray-core/releases/latest | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['tag_name'])")
           echo "Downloading Xray $XRAY_VER"
           curl -Lo xray-intel.zip "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VER}/Xray-macos-64.zip"
           curl -Lo xray-arm64.zip "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VER}/Xray-macos-arm64-v8a.zip"
