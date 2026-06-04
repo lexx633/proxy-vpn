@@ -20,11 +20,12 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
     @IBOutlet weak var autoSelectFastServer: NSButtonCell!
 
     // Limm UI — created programmatically
-    private var limmBox:         NSBox!
-    private var checkinCheckbox: NSButton!
-    private var sendLogButton:   NSButton!
-    private var modeLabel:       NSTextField!
-    private var modeControl:     NSSegmentedControl!
+    private var limmBox:          NSBox!
+    private var checkinCheckbox:  NSButton!
+    private var sendLogButton:    NSButton!
+    private var modeLabel:        NSTextField!
+    private var modeControl:      NSSegmentedControl!
+    private var limmSectionBuilt: Bool = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -34,29 +35,44 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         autoCheckVersion.state    = UserDefaults.getBool(forKey: .autoCheckVersion)    ? .on : .off
         autoUpdateServers.state   = UserDefaults.getBool(forKey: .autoUpdateServers)   ? .on : .off
         autoSelectFastServer.state = UserDefaults.getBool(forKey: .autoSelectFastestServer) ? .on : .off
+    }
 
+    // NIB uses AutoLayout — frame is only valid after layout pass, not in viewDidLoad.
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        guard !limmSectionBuilt, view.frame.height > 50 else { return }
+        limmSectionBuilt = true
         buildLimmSection()
     }
 
     // MARK: - Limm section (programmatic)
 
     private func buildLimmSection() {
-        // Capture original NIB height, then expand view to fit our section below it.
+        // At this point (called from viewDidLayout) view.frame is valid.
+        // NSPreferences views are flipped (y=0 at top), so "below existing content"
+        // means y = origH (in flipped coords the box sits right after the NIB rows).
         let origH: CGFloat = view.frame.height
-        let addH:  CGFloat = 155
-        view.frame.size.height    = origH + addH
-        preferredContentSize      = NSSize(width: view.frame.width, height: view.frame.height)
+        let boxH:  CGFloat = 148
+        let addH:  CGFloat = boxH + 16
 
-        // Box container
-        limmBox = NSBox()
-        limmBox.title          = "limm VPN Agent"
-        limmBox.titlePosition  = .atTop
-        limmBox.translatesAutoresizingMaskIntoConstraints = false
+        // Expand the view downward to fit our box.
+        view.frame.size.height = origH + addH
+        preferredContentSize   = NSSize(width: view.frame.width, height: view.frame.height)
+
+        // Box — frame-based, no AutoLayout (avoids fighting the NIB's constraint engine).
+        limmBox = NSBox(frame: NSRect(x: 20, y: origH + 8,
+                                     width: view.frame.width - 40, height: boxH))
+        limmBox.autoresizingMask = [.width]
+        limmBox.title        = "limm VPN Agent"
+        limmBox.titlePosition = .atTop
         view.addSubview(limmBox)
+
+        let boxW = limmBox.bounds.width
 
         // Proxy mode label
         modeLabel = NSTextField(labelWithString: "Режим прокси:")
-        modeLabel.translatesAutoresizingMaskIntoConstraints = false
+        modeLabel.sizeToFit()
+        modeLabel.setFrameOrigin(NSPoint(x: 16, y: boxH - 44))
         limmBox.addSubview(modeLabel)
 
         // Segmented control: Global / PAC / Manual
@@ -64,15 +80,18 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
                                          trackingMode: .selectOne,
                                          target: self,
                                          action: #selector(proxyModeChanged(_:)))
-        modeControl.translatesAutoresizingMaskIntoConstraints = false
+        modeControl.sizeToFit()
+        modeControl.setFrameOrigin(NSPoint(x: 16 + modeLabel.frame.width + 12,
+                                           y: modeLabel.frame.minY - 2))
         let mode = RunMode(rawValue: UserDefaults.get(forKey: .runMode) ?? "global") ?? .global
         modeControl.selectedSegment = mode == .global ? 0 : (mode == .pac ? 1 : 2)
         limmBox.addSubview(modeControl)
 
-        // Checkin toggle
+        // Checkin checkbox
         checkinCheckbox = NSButton(checkboxWithTitle: "Отправлять диагностику на limm.space каждые 15 мин",
                                    target: self, action: #selector(checkinToggled(_:)))
-        checkinCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        checkinCheckbox.sizeToFit()
+        checkinCheckbox.setFrameOrigin(NSPoint(x: 16, y: modeLabel.frame.minY - 30))
         checkinCheckbox.state = UserDefaults.standard.bool(forKey: LimmConfig.checkinEnabledKey) ? .on : .off
         limmBox.addSubview(checkinCheckbox)
 
@@ -80,33 +99,9 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         sendLogButton = NSButton(title: "Send Diagnostic Log",
                                  target: self, action: #selector(sendDiagnosticLog(_:)))
         sendLogButton.bezelStyle = .rounded
-        sendLogButton.translatesAutoresizingMaskIntoConstraints = false
+        sendLogButton.sizeToFit()
+        sendLogButton.setFrameOrigin(NSPoint(x: 16, y: checkinCheckbox.frame.minY - 32))
         limmBox.addSubview(sendLogButton)
-
-        // Layout: limmBox starts just below original NIB content (view is flipped: y=0 at top).
-        NSLayoutConstraint.activate([
-            limmBox.topAnchor.constraint(equalTo: view.topAnchor, constant: origH + 8),
-            limmBox.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            limmBox.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            limmBox.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8),
-
-            // Mode label
-            modeLabel.topAnchor.constraint(equalTo: limmBox.topAnchor, constant: 24),
-            modeLabel.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: 16),
-
-            // Mode control
-            modeControl.centerYAnchor.constraint(equalTo: modeLabel.centerYAnchor),
-            modeControl.leadingAnchor.constraint(equalTo: modeLabel.trailingAnchor, constant: 12),
-
-            // Checkin checkbox
-            checkinCheckbox.topAnchor.constraint(equalTo: modeLabel.bottomAnchor, constant: 14),
-            checkinCheckbox.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: 16),
-
-            // Send log button
-            sendLogButton.topAnchor.constraint(equalTo: checkinCheckbox.bottomAnchor, constant: 12),
-            sendLogButton.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: 16),
-            sendLogButton.bottomAnchor.constraint(equalTo: limmBox.bottomAnchor, constant: -16),
-        ])
     }
 
     // MARK: - Actions

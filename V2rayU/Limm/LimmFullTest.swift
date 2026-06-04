@@ -181,8 +181,10 @@ final class LimmFullTest {
 
         // 2. Чекин #1 (VPN может быть выключен — l0/l1 без туннеля) ──
         step("Чекин #1") {
-            LimmCheckin.shared.perform()   // sync curl-probes, async HTTP post
-            return (true, "probes done, post sent")
+            let sem = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async { LimmCheckin.shared.perform(); sem.signal() }
+            let r = sem.wait(timeout: .now() + 30)
+            return (true, r == .success ? "probes done" : "timeout 30s")
         }
 
         // 3. Запуск VPN ───────────────────────────────────────────────
@@ -217,8 +219,10 @@ final class LimmFullTest {
 
         // 8. Чекин #2 (VPN включён — l0-l4 + сервисы через туннель) ──
         step("Чекин #2") {
-            LimmCheckin.shared.perform()
-            return (true, "probes done, post sent")
+            let sem = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async { LimmCheckin.shared.perform(); sem.signal() }
+            let r = sem.wait(timeout: .now() + 30)
+            return (true, r == .success ? "probes done" : "timeout 30s")
         }
 
         // 9. Финальная остановка VPN ──────────────────────────────────

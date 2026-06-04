@@ -115,9 +115,10 @@ jobs:
       - name: Set version info
         run: |
           echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          VERSION=$(grep -m1 'MARKETING_VERSION' V2rayU.xcodeproj/project.pbxproj | sed 's/.*= *//; s/;.*//')
+          BASE_VER=$(grep -m1 'MARKETING_VERSION' V2rayU.xcodeproj/project.pbxproj | sed 's/.*= *//; s/;.*//')
+          VERSION="${BASE_VER}.${{ github.run_number }}"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "Resolved MARKETING_VERSION=$VERSION"
+          echo "Resolved VERSION=$VERSION"
 
       # ── Deploy to limm.space (native scp/ssh — appleboy actions are Linux-only) ──
       - name: Setup SSH key
