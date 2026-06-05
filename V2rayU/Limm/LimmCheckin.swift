@@ -123,7 +123,17 @@ class LimmCheckin {
         let socksPort = UserDefaults.standard.integer(forKey: "localSockPort")
             .nonzero ?? 1080
         let socks   = "127.0.0.1:\(socksPort)"
-        let vpnOn   = overrideVpnOn ?? UserDefaults.standard.bool(forKey: "v2rayTurnOn")
+        // vpnOn: primary = UserDefaults toggle; fallback = SOCKS port actually responding.
+        // Handles auto-switch / external restarts where v2rayTurnOn wasn't updated.
+        // curlDirect к SOCKS-порту: HTTP→SOCKS5 даёт exit 52/56 (порт открыт) → возвращает 1.
+        let vpnOn: Bool
+        if let ov = overrideVpnOn {
+            vpnOn = ov
+        } else {
+            let prefOn = UserDefaults.standard.bool(forKey: "v2rayTurnOn")
+            let socksUp = !prefOn && curlDirect("http://127.0.0.1:\(socksPort)", timeout: 1) == 1
+            vpnOn = prefOn || socksUp
+        }
 
         NSLog("[Limm] checkin start uid=%@ socks=%@", uid, socks)
 
