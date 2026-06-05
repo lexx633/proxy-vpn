@@ -114,9 +114,13 @@ class LimmLogReporter {
         let logPath = NSHomeDirectory() + "/.V2rayU/v2ray-core.log"
         guard let data = FileManager.default.contents(atPath: logPath),
               let text = String(data: data, encoding: .utf8) else { return "" }
-        // Last 200 lines
         let lines = text.components(separatedBy: "\n")
-        return lines.suffix(200).joined(separator: "\n")
+        // Find the last Xray version header (banner line before "[Warning] core: Xray X.Y.Z started")
+        let versionLine = lines.reversed().first { $0.contains("Xray") && $0.contains("Penetrates Everything") } ?? ""
+        let startedLine = lines.reversed().first { $0.contains("[Warning] core: Xray") && $0.contains("started") } ?? ""
+        let header = [versionLine, startedLine].filter { !$0.isEmpty }.joined(separator: "\n")
+        let tail = lines.suffix(200).joined(separator: "\n")
+        return header.isEmpty ? tail : "=== Xray version ===\n\(header)\n=== Log (last 200 lines) ===\n\(tail)"
     }
 
     // MARK: - Upload

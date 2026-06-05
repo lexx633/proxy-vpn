@@ -79,7 +79,7 @@ class LimmCheckin {
 
     /// Service probe through SOCKS: "ok" / "blocked" / "down"
     private func probeService(url: String, blockMarkers: [String], socks: String) -> String {
-        let (code, body) = curl(["--socks5", socks, "--max-time", "15", url], timeout: 15)
+        let (code, body) = curl(["--socks5", socks, url], timeout: 10)
         if code == "000" { return "down" }
         if code == "451" { return "blocked" }
         let lower = body.lowercased()
@@ -135,18 +135,30 @@ class LimmCheckin {
                 l4 = (egressIP == LimmConfig.serverIP) ? 1 : 0
             }
 
-            // Service probes
-            tgStatus    = probeService(url: "https://web.telegram.org/",
-                                       blockMarkers: [],
-                                       socks: socks)
-            gglStatus   = probeService(url: "https://www.google.com/search?q=test",
-                                       blockMarkers: [],
-                                       socks: socks)
-            chgptStatus = probeService(url: "https://chatgpt.com/",
-                                       blockMarkers: ["unsupported_country",
-                                                      "not available in your country",
-                                                      "openai's services are not available"],
-                                       socks: socks)
+            // Service probes — run in parallel so all 3 take ≤10s instead of 3×10s sequential
+            let probeGroup = DispatchGroup()
+            probeGroup.enter()
+            DispatchQueue.global().async {
+                tgStatus = self.probeService(url: "https://web.telegram.org/",
+                                             blockMarkers: [], socks: socks)
+                probeGroup.leave()
+            }
+            probeGroup.enter()
+            DispatchQueue.global().async {
+                gglStatus = self.probeService(url: "https://www.google.com/search?q=test",
+                                              blockMarkers: [], socks: socks)
+                probeGroup.leave()
+            }
+            probeGroup.enter()
+            DispatchQueue.global().async {
+                chgptStatus = self.probeService(url: "https://chatgpt.com/",
+                                                blockMarkers: ["unsupported_country",
+                                                               "not available in your country",
+                                                               "openai's services are not available"],
+                                                socks: socks)
+                probeGroup.leave()
+            }
+            probeGroup.wait()
             destTelegram = tgStatus
             destGoogle   = gglStatus
         }

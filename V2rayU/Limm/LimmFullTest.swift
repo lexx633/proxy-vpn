@@ -196,9 +196,10 @@ final class LimmFullTest {
         // 3. Запуск VPN ───────────────────────────────────────────────
         step("Запуск VPN") {
             DispatchQueue.main.sync { V2rayLaunch.startV2rayCore() }
-            Thread.sleep(forTimeInterval: 4)
+            let port = UserDefaults.standard.integer(forKey: "localSockPort").nonzero ?? 1080
+            let ready = waitForSocks(port: port, maxSec: 10)
             let on = UserDefaults.standard.bool(forKey: "v2rayTurnOn")
-            return (on, on ? "running" : "не запустился")
+            return (on && ready, on ? "running" : "не запустился")
         }
 
         // 4. Тест IP #1 ───────────────────────────────────────────────
@@ -207,36 +208,36 @@ final class LimmFullTest {
         // 5. Остановка VPN ────────────────────────────────────────────
         step("Остановка VPN") {
             DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
-            Thread.sleep(forTimeInterval: 2)
+            Thread.sleep(forTimeInterval: 0.5)
             let off = !UserDefaults.standard.bool(forKey: "v2rayTurnOn")
             return (off, off ? "stopped" : "всё ещё работает?")
         }
 
         // 6. Запуск VPN #2 ────────────────────────────────────────────
-        // Extra sleep: after stop+restart, xray needs ~6s to rebind SOCKS port.
         step("Запуск VPN #2") {
             DispatchQueue.main.sync { V2rayLaunch.startV2rayCore() }
-            Thread.sleep(forTimeInterval: 7)
+            let port = UserDefaults.standard.integer(forKey: "localSockPort").nonzero ?? 1080
+            let ready = waitForSocks(port: port, maxSec: 12)
             let on = UserDefaults.standard.bool(forKey: "v2rayTurnOn")
-            return (on, on ? "running" : "не запустился")
+            return (on && ready, on ? "running" : "не запустился")
         }
 
         // 7. Тест IP #2 ───────────────────────────────────────────────
         step("Тест IP — запуск #2") { testEgressIP() }
 
         // 8. Чекин #2 (VPN включён — l0-l4 + сервисы через туннель) ──
-        // Таймаут 90с: L0+L1(5+5) + L2/L4(10+15) + 3×probeService(15×3) = ~75с макс.
+        // Таймаут 50с: L0+L1(5+5) + L2/L4(10+15) + parallel probeService(10s) = ~45с макс.
         step("Чекин #2") {
             let sem = DispatchSemaphore(value: 0)
             DispatchQueue.global().async { LimmCheckin.shared.perform(); sem.signal() }
-            let r = sem.wait(timeout: .now() + 90)
-            return (true, r == .success ? "probes done" : "timeout 90s")
+            let r = sem.wait(timeout: .now() + 50)
+            return (true, r == .success ? "probes done" : "timeout 50s")
         }
 
         // 9. Финальная остановка VPN ──────────────────────────────────
         step("Остановка VPN (финал)") {
             DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
-            Thread.sleep(forTimeInterval: 1)
+            Thread.sleep(forTimeInterval: 0.5)
             return (true, "")
         }
 
@@ -303,4 +304,30 @@ final class LimmFullTest {
         f.dateFormat = "HH:mm:ss"
         return f.string(from: Date())
     }
+
+    /// Poll 127.0.0.1:port every 300ms until it accepts a TCP connection or maxSec elapses.
+    /// Returns true as soon as SOCKS port responds — replaces fixed sleep after VPN start.
+    private func waitForSocks(port: Int, maxSec: Double) -> Bool {
+        let deadline = Date().addingTimeInterval(maxSec)
+        while Date() < deadline {
+            if socksPortOpen(port: port) { return true }
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+        return false
+    }
+
+    private func socksPortOpen(port: Int) -> Bool {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+        p.arguments = ["--max-time", "1", "-s", "-o", "/dev/null",
+                       "--connect-timeout", "1", "http://127.0.0.1:\(port)"]
+        p.standardOutput = Pipe(); p.standardError = Pipe()
+        try? p.run(); p.waitUntilExit()
+        let c = Int(p.terminationStatus)
+        return c == 0 || c == 52 || c == 56
+    }
+}
+
+private extension Int {
+    var nonzero: Int? { self == 0 ? nil : self }
 }
