@@ -227,17 +227,40 @@ final class LimmFullTest {
         step("Тест IP — запуск #2") { testEgressIP() }
 
         // 8. Чекин #2 (VPN включён — l0-l4 + сервисы через туннель) ──
-        // Таймаут 80с: L0+L1(10) + L2(10) + L4(15) + probes(10) = 45s + 35s slack для HTTP.
-        step("Чекин #2") {
+        // Таймаут 90с: L0+L1(10) + L2(10) + L4(15) + probes(15) = 50s + 40s slack.
+        // Тикер печатает прогресс каждые 20с — интерфейс не выглядит подвисшим.
+        do {
+            w.appendLine("⏳ Чекин #2…\n")
+            let t2 = Date()
             let sem = DispatchSemaphore(value: 0)
             var httpCode = 0; var httpMsg = ""
             LimmCheckin.shared.perform { code, msg in
-                httpCode = code; httpMsg = msg
-                sem.signal()
+                httpCode = code; httpMsg = msg; sem.signal()
             }
-            let r = sem.wait(timeout: .now() + 80)
-            if r == .timedOut { return (false, "timeout 80s") }
-            return (httpCode == 200, httpCode == 200 ? "ok \(httpCode)" : "fail \(httpCode) \(httpMsg.prefix(40))")
+            var tickerDone = false
+            let tickQ = DispatchQueue(label: "limm.fulltest.ticker", qos: .background)
+            func scheduleTick() {
+                tickQ.asyncAfter(deadline: .now() + 20) {
+                    guard !tickerDone else { return }
+                    let elapsed = Int(Date().timeIntervalSince(t2))
+                    w.appendLine("   ⏳ проверяем сервисы через туннель… \(elapsed)s\n")
+                    scheduleTick()
+                }
+            }
+            scheduleTick()
+            let r = sem.wait(timeout: .now() + 90)
+            tickerDone = true
+            let ms = Int(Date().timeIntervalSince(t2) * 1000)
+            let ok2: Bool; let detail2: String
+            if r == .timedOut {
+                ok2 = false; detail2 = "timeout 90s"
+            } else {
+                ok2 = (httpCode == 200)
+                detail2 = httpCode == 200 ? "ok \(httpCode)" : "fail \(httpCode) \(httpMsg.prefix(40))"
+            }
+            let mark2 = ok2 ? "✓" : "✗"
+            w.appendLine("\(mark2) Чекин #2  (\(detail2))  [\(ms)ms]\n")
+            if !ok2 { allOK = false }
         }
 
         // 9. Финальная остановка VPN ──────────────────────────────────

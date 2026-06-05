@@ -68,8 +68,10 @@ class LimmCheckin {
     private func curlDirect(_ url: String, timeout: Int = 6) -> Int {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+        // --noproxy '*' bypasses macOS system proxy (set by V2rayU) so L0/L1 measure
+        // real internet reachability, not the VPN tunnel.
         proc.arguments = ["--max-time", "\(timeout)", "-s", "-o", "/dev/null",
-                          "--connect-timeout", "\(timeout)", url]
+                          "--connect-timeout", "\(timeout)", "--noproxy", "*", url]
         proc.standardOutput = Pipe(); proc.standardError = Pipe()
         do { try proc.run(); proc.waitUntilExit() } catch { return 0 }
         // 0=ok, 52=empty reply (server closed — still reachable), both count as L0/L1
@@ -79,7 +81,7 @@ class LimmCheckin {
 
     /// Service probe through SOCKS: "ok" / "blocked" / "down"
     private func probeService(url: String, blockMarkers: [String], socks: String) -> String {
-        let (code, body) = curl(["--socks5", socks, url], timeout: 10)
+        let (code, body) = curl(["--socks5", socks, url], timeout: 15)
         if code == "000" { return "down" }
         if code == "451" { return "blocked" }
         let lower = body.lowercased()
@@ -108,8 +110,10 @@ class LimmCheckin {
         // L0 — local internet (DNS server, direct)
         let l0 = curlDirect("http://8.8.8.8", timeout: 5)
 
-        // L1 — server TCP reachability (direct, no proxy)
+        // L1 — server TCP reachability (direct, no proxy); side-effect: measures RTT
+        let l1Start = Date()
         let l1 = curlDirect("http://\(LimmConfig.serverIP):\(LimmConfig.serverPort)", timeout: 5)
+        let latencyMs = l1 == 1 ? Int(Date().timeIntervalSince(l1Start) * 1000) : 0
 
         var l2 = 0, l3 = 0, l4 = 0
         var egressIP = ""
@@ -171,7 +175,7 @@ class LimmCheckin {
             "egress_ip":     egressIP,
         ]
 
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "client_uid":  uid,
             "kind":        LimmConfig.clientKind,
             "label":       LimmConfig.clientLabel,
@@ -180,6 +184,7 @@ class LimmCheckin {
             "vpn_running": vpnOn ? 1 : 0,
             "raw": raw,
         ]
+        if latencyMs > 0 { payload["latency_ms"] = latencyMs }
 
         NSLog("[Limm] l0=%d l1=%d l2=%d l3=%d l4=%d vpn=%d tg=%@ ggl=%@ chgpt=%@",
               l0, l1, l2, l3, l4, vpnOn ? 1 : 0, tgStatus, gglStatus, chgptStatus)
