@@ -180,17 +180,18 @@ final class LimmFullTest {
         }
 
         // 2. Чекин #1 (VPN ещё не запущен — l0/l1 без туннеля) ───────
-        // overrideVpnOn:false — даже если UserDefaults хранит v2rayTurnOn=true
-        // от прошлой сессии, SOCKS-пробы (L2–L4 + 3×probeService по 15с)
-        // пропускаются; чекин завершается за ~10с вместо зависания в 30с.
+        // overrideVpnOn:false — SOCKS-пробы пропускаются, чекин за ~10с.
+        // Ждём реального HTTP-ответа от сервера (не fire-and-forget).
         step("Чекин #1") {
             let sem = DispatchSemaphore(value: 0)
-            DispatchQueue.global().async {
-                LimmCheckin.shared.perform(overrideVpnOn: false)
+            var httpCode = 0; var httpMsg = ""
+            LimmCheckin.shared.perform(overrideVpnOn: false) { code, msg in
+                httpCode = code; httpMsg = msg
                 sem.signal()
             }
-            let r = sem.wait(timeout: .now() + 20)
-            return (true, r == .success ? "l0+l1 done" : "timeout 20s")
+            let r = sem.wait(timeout: .now() + 25)
+            if r == .timedOut { return (false, "timeout 25s") }
+            return (httpCode == 200, httpCode == 200 ? "ok \(httpCode)" : "fail \(httpCode) \(httpMsg.prefix(40))")
         }
 
         // 3. Запуск VPN ───────────────────────────────────────────────
@@ -226,12 +227,17 @@ final class LimmFullTest {
         step("Тест IP — запуск #2") { testEgressIP() }
 
         // 8. Чекин #2 (VPN включён — l0-l4 + сервисы через туннель) ──
-        // Таймаут 65с: L0+L1(5+5) + L2(10) + L4(15) + parallel probeService(10) = 45s + 20s slack.
+        // Таймаут 80с: L0+L1(10) + L2(10) + L4(15) + probes(10) = 45s + 35s slack для HTTP.
         step("Чекин #2") {
             let sem = DispatchSemaphore(value: 0)
-            DispatchQueue.global().async { LimmCheckin.shared.perform(); sem.signal() }
-            let r = sem.wait(timeout: .now() + 65)
-            return (true, r == .success ? "probes done" : "timeout 65s")
+            var httpCode = 0; var httpMsg = ""
+            LimmCheckin.shared.perform { code, msg in
+                httpCode = code; httpMsg = msg
+                sem.signal()
+            }
+            let r = sem.wait(timeout: .now() + 80)
+            if r == .timedOut { return (false, "timeout 80s") }
+            return (httpCode == 200, httpCode == 200 ? "ok \(httpCode)" : "fail \(httpCode) \(httpMsg.prefix(40))")
         }
 
         // 9. Финальная остановка VPN ──────────────────────────────────

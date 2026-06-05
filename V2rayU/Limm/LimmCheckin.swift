@@ -95,7 +95,7 @@ class LimmCheckin {
     ///   Use `overrideVpnOn: false` in Full Test step 1 (VPN not yet started) so that
     ///   SOCKS probes (L2–L4 + service checks) are skipped and checkin finishes in ~10s
     ///   instead of waiting up to 65s for curl timeouts on an unavailable SOCKS port.
-    func perform(overrideVpnOn: Bool? = nil) {
+    func perform(overrideVpnOn: Bool? = nil, checkinCompletion: ((Int, String) -> Void)? = nil) {
         let token   = LimmConfig.token
         let uid     = LimmConfig.clientUID()
         let socksPort = UserDefaults.standard.integer(forKey: "localSockPort")
@@ -184,12 +184,16 @@ class LimmCheckin {
         NSLog("[Limm] l0=%d l1=%d l2=%d l3=%d l4=%d vpn=%d tg=%@ ggl=%@ chgpt=%@",
               l0, l1, l2, l3, l4, vpnOn ? 1 : 0, tgStatus, gglStatus, chgptStatus)
 
-        postCheckin(payload: payload, token: token)
+        postCheckin(payload: payload, token: token, completion: checkinCompletion)
     }
 
-    private func postCheckin(payload: [String: Any], token: String) {
-        guard let url = URL(string: "\(LimmConfig.apiBase)/checkin") else { return }
-        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
+    private func postCheckin(payload: [String: Any], token: String, completion: ((Int, String) -> Void)? = nil) {
+        guard let url = URL(string: "\(LimmConfig.apiBase)/checkin") else {
+            completion?(0, "bad url"); return
+        }
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else {
+            completion?(0, "json error"); return
+        }
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -205,11 +209,13 @@ class LimmCheckin {
         let task = URLSession(configuration: directConfig).dataTask(with: req) { data, resp, err in
             if let err = err {
                 NSLog("[Limm] checkin error: %@", err.localizedDescription)
+                completion?(0, err.localizedDescription)
                 return
             }
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             let respStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
             NSLog("%@", "[Limm] checkin -> \(code) \(respStr.prefix(120))")
+            completion?(code, respStr)
         }
         task.resume()
     }
