@@ -132,10 +132,20 @@ class LimmCheckin {
         // (connection refused) was not in success list → l0 always 0 with --noproxy.
         let l0 = curlDirect("http://1.1.1.1", timeout: 5)
 
-        // L1 — server TCP reachability (direct, no proxy); side-effect: measures RTT
-        let l1Start = Date()
-        let l1 = curlDirect("http://\(LimmConfig.serverIP):\(LimmConfig.serverPort)", timeout: 5)
-        let latencyMs = l1 == 1 ? Int(Date().timeIntervalSince(l1Start) * 1000) : 0
+        // L1 — 3 direct probes → average RTT (bypasses system proxy via --noproxy)
+        var l1 = 0
+        var latencyMs = 0
+        do {
+            var samples: [Int] = []
+            for _ in 0..<3 {
+                let t = Date()
+                if curlDirect("http://\(LimmConfig.serverIP):\(LimmConfig.serverPort)", timeout: 5) == 1 {
+                    samples.append(Int(Date().timeIntervalSince(t) * 1000))
+                    l1 = 1
+                }
+            }
+            if !samples.isEmpty { latencyMs = samples.reduce(0, +) / samples.count }
+        }
 
         var l2 = 0, l3 = 0, l4 = 0
         var egressIP = ""
@@ -162,8 +172,12 @@ class LimmCheckin {
                 l4 = (egressIP == LimmConfig.serverIP) ? 1 : 0
             }
 
-            // tunnel_ms — full HTTP roundtrip through VPN tunnel (gstatic generate_204)
-            tunnelMs = measureTunnelMs(socks: socks)
+            // tunnel_ms — 3 roundtrips through VPN tunnel → average
+            var tmsSamples: [Int] = []
+            for _ in 0..<3 {
+                if let ms = measureTunnelMs(socks: socks) { tmsSamples.append(ms) }
+            }
+            if !tmsSamples.isEmpty { tunnelMs = tmsSamples.reduce(0, +) / tmsSamples.count }
 
             // Service probes — run in parallel so all 3 take ≤10s instead of 3×10s sequential
             let probeGroup = DispatchGroup()

@@ -152,6 +152,35 @@ final class LimmFullTest {
         DispatchQueue.global(qos: .userInitiated).async { self.execute(w) }
     }
 
+    // MARK: - Fulltest results upload
+
+    private func postFullTestResults(_ profiles: [(name: String, ok: Bool, latencyMs: Int?)]) {
+        guard !profiles.isEmpty else { return }
+        let token = LimmConfig.token
+        guard !token.isEmpty, token != "__LIMM_TOKEN__" else { return }
+        let profilesArr = profiles.map { p -> [String: Any] in
+            var d: [String: Any] = ["name": p.name, "ok": p.ok ? 1 : 0]
+            if let ms = p.latencyMs { d["latency_ms"] = ms }
+            return d
+        }
+        let payload: [String: Any] = [
+            "client_uid": LimmConfig.clientUID(),
+            "kind": LimmConfig.clientKind,
+            "profiles": profilesArr,
+        ]
+        guard let url  = URL(string: "\(LimmConfig.apiBase)/fulltest"),
+              let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.httpBody = body
+        req.timeoutInterval = 20
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.connectionProxyDictionary = [:]
+        URLSession(configuration: cfg).dataTask(with: req) { _, _, _ in }.resume()
+    }
+
     // MARK: - Execution
 
     private func execute(_ w: LimmFullTestWindowController) {
@@ -201,10 +230,13 @@ final class LimmFullTest {
 
         w.appendLine("\n── Профили (\(servers.count)) ──\n\n")
 
+        var profileResults: [(name: String, ok: Bool, latencyMs: Int?)] = []
+
         for server in servers {
             let label = server.remark.isEmpty ? server.name : server.remark
+            var profileOk = false
+            var profileMs: Int? = nil
             step("▸ \(label)") {
-                // Переключаемся на профиль и запускаем VPN
                 DispatchQueue.main.sync {
                     UserDefaults.set(forKey: .v2rayCurrentServerName, value: server.name)
                     V2rayLaunch.startV2rayCore()
@@ -217,12 +249,16 @@ final class LimmFullTest {
                     return (false, "SOCKS не поднялся за 10s")
                 }
 
+                let t0 = Date()
                 let (ok, detail) = testEgressIP()
+                if ok { profileMs = Int(Date().timeIntervalSince(t0) * 1000) }
+                profileOk = ok
 
                 DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
                 Thread.sleep(forTimeInterval: 0.5)
                 return (ok, detail)
             }
+            profileResults.append((name: label, ok: profileOk, latencyMs: profileMs))
         }
 
         // Восстанавливаем исходный профиль и автопереключение.
@@ -236,7 +272,10 @@ final class LimmFullTest {
             if wasAutoSwitch { LimmAutoSwitch.shared.enable() }
         }
 
-        // 4. Отправка лога (VPN выключен → нет loop-проблемы) ─────────
+        // 4. Загружаем результаты профилей на сервер ─────────────────
+        postFullTestResults(profileResults)
+
+        // 5. Отправка лога (VPN выключен → нет loop-проблемы) ─────────
         w.appendLine("\n")
         step("Отправка диагностического лога") {
             let sem = DispatchSemaphore(value: 0)
