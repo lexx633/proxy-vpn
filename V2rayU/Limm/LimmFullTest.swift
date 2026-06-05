@@ -227,27 +227,34 @@ final class LimmFullTest {
         step("Тест IP — запуск #2") { testEgressIP() }
 
         // 8. Чекин #2 (VPN включён — l0-l4 + сервисы через туннель) ──
-        // Таймаут 90с: L0+L1(10) + L2(10) + L4(15) + probes(15) = 50s + 40s slack.
-        // Тикер печатает прогресс каждые 20с — интерфейс не выглядит подвисшим.
+        // perform() синхронный (~50s на пробы). Запускаем в background, текущий поток
+        // сразу уходит на sem.wait — так тикер работает ВО ВРЕМЯ проб, а не после.
         do {
             w.appendLine("⏳ Чекин #2…\n")
             let t2 = Date()
             let sem = DispatchSemaphore(value: 0)
             var httpCode = 0; var httpMsg = ""
-            LimmCheckin.shared.perform { code, msg in
-                httpCode = code; httpMsg = msg; sem.signal()
-            }
-            var tickerDone = false
-            let tickQ = DispatchQueue(label: "limm.fulltest.ticker", qos: .background)
-            func scheduleTick() {
-                tickQ.asyncAfter(deadline: .now() + 20) {
-                    guard !tickerDone else { return }
-                    let elapsed = Int(Date().timeIntervalSince(t2))
-                    w.appendLine("   ⏳ проверяем сервисы через туннель… \(elapsed)s\n")
-                    scheduleTick()
+
+            // perform() на фоновом потоке; completion сигналит семафор
+            DispatchQueue.global(qos: .background).async {
+                LimmCheckin.shared.perform { code, msg in
+                    httpCode = code; httpMsg = msg; sem.signal()
                 }
             }
-            scheduleTick()
+
+            // Тикер: отдельный поток, пишет каждые 20s пока ждём
+            var tickerDone = false
+            Thread.detachNewThread {
+                var secs = 0
+                while !tickerDone {
+                    Thread.sleep(forTimeInterval: 20)
+                    secs += 20
+                    if !tickerDone {
+                        w.appendLine("   ⏳ проверяем сервисы через туннель… \(secs)s\n")
+                    }
+                }
+            }
+
             let r = sem.wait(timeout: .now() + 90)
             tickerDone = true
             let ms = Int(Date().timeIntervalSince(t2) * 1000)

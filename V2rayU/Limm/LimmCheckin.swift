@@ -107,8 +107,10 @@ class LimmCheckin {
 
         NSLog("[Limm] checkin start uid=%@ socks=%@", uid, socks)
 
-        // L0 — local internet (DNS server, direct)
-        let l0 = curlDirect("http://8.8.8.8", timeout: 5)
+        // L0 — local internet: 1.1.1.1:80 (Cloudflare HTTP, always responds on port 80)
+        // 8.8.8.8 was wrong target — Google DNS does not serve HTTP, exit code 7
+        // (connection refused) was not in success list → l0 always 0 with --noproxy.
+        let l0 = curlDirect("http://1.1.1.1", timeout: 5)
 
         // L1 — server TCP reachability (direct, no proxy); side-effect: measures RTT
         let l1Start = Date()
