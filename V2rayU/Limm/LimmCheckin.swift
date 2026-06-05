@@ -176,7 +176,7 @@ class LimmCheckin {
             "kind":        LimmConfig.clientKind,
             "label":       LimmConfig.clientLabel,
             "app_version": LimmConfig.appVersion,
-            "l0": l0, "l1": l1, "l2": l2, "l3": l3, "l4": l4,
+            "l0_local_net": l0, "l1_tcp443": l1, "l2_handshake": l2, "l3_tunnel": l3, "l4_dest": l4,
             "vpn_running": vpnOn ? 1 : 0,
             "raw": raw,
         ]
