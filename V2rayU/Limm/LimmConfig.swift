@@ -14,7 +14,7 @@ enum LimmConfig {
     // Checkin
     static let checkinInterval: TimeInterval = 900   // 15 min
     static let clientKind   = "macos"
-    static let clientLabel  = "limm-mac"
+    static let clientLabel  = "pc"
     // format "version+hash4" — parsed by dashboard buildTag() → shows #hash
     static let appVersion   = "\(LimmBuildInfo.version)+\(LimmBuildInfo.commit)"
 
