@@ -1,7 +1,6 @@
 // LimmFullTest.swift — пошаговая диагностика VPN с тимингами.
 // Запуск: MainMenu → «Full Test...»
-// Шаги: очистка лога → чекин #1 → старт VPN → тест IP → стоп →
-//        старт VPN #2 → тест IP → чекин #2 → стоп → отправка лога.
+// Шаги: очистка лога → чекин (без VPN) → цикл по профилям (start→IP→stop) → отправка лога.
 
 import Cocoa
 
@@ -159,7 +158,6 @@ final class LimmFullTest {
         let globalStart = Date()
         var allOK = true
 
-        /// Запустить один шаг, вывести статус + тайминг.
         func step(_ name: String, _ body: () -> (Bool, String)) {
             w.appendLine("⏳ \(name)…\n")
             let t = Date()
@@ -179,10 +177,8 @@ final class LimmFullTest {
             return (true, "")
         }
 
-        // 2. Чекин #1 (VPN ещё не запущен — l0/l1 без туннеля) ───────
-        // overrideVpnOn:false — SOCKS-пробы пропускаются, чекин за ~10с.
-        // Ждём реального HTTP-ответа от сервера (не fire-and-forget).
-        step("Чекин #1") {
+        // 2. Чекин без VPN (l0/l1 direct, SOCKS-пробы пропускаются → ~10s) ─
+        step("Чекин (без VPN)") {
             let sem = DispatchSemaphore(value: 0)
             var httpCode = 0; var httpMsg = ""
             LimmCheckin.shared.perform(overrideVpnOn: false) { code, msg in
@@ -194,97 +190,57 @@ final class LimmFullTest {
             return (httpCode == 200, httpCode == 200 ? "ok \(httpCode)" : "fail \(httpCode) \(httpMsg.prefix(40))")
         }
 
-        // 3. Запуск VPN ───────────────────────────────────────────────
-        step("Запуск VPN") {
-            DispatchQueue.main.sync { V2rayLaunch.startV2rayCore() }
-            let port = UserDefaults.standard.integer(forKey: "localSockPort").nonzero ?? 1080
-            let ready = waitForSocks(port: port, maxSec: 10)
-            let on = UserDefaults.standard.bool(forKey: "v2rayTurnOn")
-            return (on && ready, on ? "running" : "не запустился")
-        }
+        // 3. Цикл по профилям ─────────────────────────────────────────
+        // Получаем список на main-потоке, затем тестируем каждый профиль.
+        let servers = DispatchQueue.main.sync { V2rayServer.list() }.filter { $0.isValid }
+        let savedServer = UserDefaults.standard.string(forKey: "v2rayCurrentServerName") ?? ""
+        let wasAutoSwitch = LimmAutoSwitch.shared.isEnabled
+        // Останавливаем автопереключение на время теста
+        if wasAutoSwitch { DispatchQueue.main.sync { LimmAutoSwitch.shared.stop() } }
 
-        // 4. Тест IP #1 ───────────────────────────────────────────────
-        step("Тест IP — запуск #1") { testEgressIP() }
+        w.appendLine("\n── Профили (\(servers.count)) ──\n\n")
 
-        // 5. Остановка VPN ────────────────────────────────────────────
-        step("Остановка VPN") {
-            DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
-            Thread.sleep(forTimeInterval: 0.5)
-            let off = !UserDefaults.standard.bool(forKey: "v2rayTurnOn")
-            return (off, off ? "stopped" : "всё ещё работает?")
-        }
-
-        // 6. Запуск VPN #2 ────────────────────────────────────────────
-        step("Запуск VPN #2") {
-            DispatchQueue.main.sync { V2rayLaunch.startV2rayCore() }
-            let port = UserDefaults.standard.integer(forKey: "localSockPort").nonzero ?? 1080
-            let ready = waitForSocks(port: port, maxSec: 12)
-            let on = UserDefaults.standard.bool(forKey: "v2rayTurnOn")
-            return (on && ready, on ? "running" : "не запустился")
-        }
-
-        // 7. Тест IP #2 ───────────────────────────────────────────────
-        step("Тест IP — запуск #2") { testEgressIP() }
-
-        // 8. Чекин #2 (VPN включён — l0-l4 + сервисы через туннель) ──
-        // perform() синхронный (~50s на пробы). Запускаем в background, текущий поток
-        // сразу уходит на sem.wait — так тикер работает ВО ВРЕМЯ проб, а не после.
-        do {
-            w.appendLine("⏳ Чекин #2…\n")
-            let t2 = Date()
-            let sem = DispatchSemaphore(value: 0)
-            var httpCode = 0; var httpMsg = ""
-
-            // perform() на фоновом потоке; completion сигналит семафор
-            DispatchQueue.global(qos: .background).async {
-                LimmCheckin.shared.perform { code, msg in
-                    httpCode = code; httpMsg = msg; sem.signal()
+        for server in servers {
+            let label = server.remark.isEmpty ? server.name : server.remark
+            step("▸ \(label)") {
+                // Переключаемся на профиль и запускаем VPN
+                DispatchQueue.main.sync {
+                    UserDefaults.set(forKey: .v2rayCurrentServerName, value: server.name)
+                    V2rayLaunch.startV2rayCore()
                 }
-            }
+                let port = UserDefaults.standard.integer(forKey: "localSockPort").nonzero ?? 1080
 
-            // Тикер: отдельный поток, пишет каждые 20s пока ждём
-            var tickerDone = false
-            Thread.detachNewThread {
-                var secs = 0
-                while !tickerDone {
-                    Thread.sleep(forTimeInterval: 20)
-                    secs += 20
-                    if !tickerDone {
-                        w.appendLine("   ⏳ проверяем сервисы через туннель… \(secs)s\n")
-                    }
+                guard waitForSocks(port: port, maxSec: 10) else {
+                    DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
+                    Thread.sleep(forTimeInterval: 0.5)
+                    return (false, "SOCKS не поднялся за 10s")
                 }
-            }
 
-            let r = sem.wait(timeout: .now() + 90)
-            tickerDone = true
-            let ms = Int(Date().timeIntervalSince(t2) * 1000)
-            let ok2: Bool; let detail2: String
-            if r == .timedOut {
-                ok2 = false; detail2 = "timeout 90s"
-            } else {
-                ok2 = (httpCode == 200)
-                detail2 = httpCode == 200 ? "ok \(httpCode)" : "fail \(httpCode) \(httpMsg.prefix(40))"
+                let (ok, detail) = testEgressIP()
+
+                DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
+                Thread.sleep(forTimeInterval: 0.5)
+                return (ok, detail)
             }
-            let mark2 = ok2 ? "✓" : "✗"
-            w.appendLine("\(mark2) Чекин #2  (\(detail2))  [\(ms)ms]\n")
-            if !ok2 { allOK = false }
         }
 
-        // 9. Финальная остановка VPN ──────────────────────────────────
-        step("Остановка VPN (финал)") {
-            DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
-            Thread.sleep(forTimeInterval: 0.5)
-            return (true, "")
+        // Восстанавливаем исходный профиль и автопереключение
+        DispatchQueue.main.sync {
+            if !savedServer.isEmpty {
+                UserDefaults.set(forKey: .v2rayCurrentServerName, value: savedServer)
+            }
+            if wasAutoSwitch { LimmAutoSwitch.shared.enable() }
         }
 
-        // 10. Отправка лога ───────────────────────────────────────────
+        // 4. Отправка лога (VPN выключен → нет loop-проблемы) ─────────
+        w.appendLine("\n")
         step("Отправка диагностического лога") {
             let sem = DispatchSemaphore(value: 0)
             var ok = false; var detail = ""
             LimmLogReporter.shared.send { success, msg in
                 ok = success; detail = msg; sem.signal()
             }
-            let res = sem.wait(timeout: .now() + 50)
+            let res = sem.wait(timeout: .now() + 30)
             if res == .timedOut { return (false, "timeout") }
             return (ok, detail)
         }
@@ -308,9 +264,9 @@ final class LimmFullTest {
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-        // 35s: XHTTP server closes first POST after ~20s on reconnect, client retries → need slack.
+        // 20s: XHTTP may need one retry (~10-15s) before first successful response.
         proc.arguments = [
-            "--max-time", "35", "-s",
+            "--max-time", "20", "-s",
             "--socks5", "127.0.0.1:\(socksPort)",
             "https://api.ipify.org",
         ]
@@ -342,7 +298,6 @@ final class LimmFullTest {
     }
 
     /// Poll 127.0.0.1:port every 300ms until it accepts a TCP connection or maxSec elapses.
-    /// Returns true as soon as SOCKS port responds — replaces fixed sleep after VPN start.
     private func waitForSocks(port: Int, maxSec: Double) -> Bool {
         let deadline = Date().addingTimeInterval(maxSec)
         while Date() < deadline {

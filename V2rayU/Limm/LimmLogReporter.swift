@@ -41,7 +41,7 @@ class LimmLogReporter {
     }
 
     private func collectProbe(socks: String) -> [String: Any] {
-        func curl(_ args: [String], timeout: Int = 12) -> (String, String) {
+        func curl(_ args: [String], timeout: Int = 8) -> (String, String) {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
             p.arguments = ["--max-time", "\(timeout)", "-s", "-L",
@@ -57,40 +57,60 @@ class LimmLogReporter {
             return ("000", raw)
         }
 
+        // --noproxy '*' bypasses macOS system proxy (set by V2rayU) for direct reachability probes.
         func directOk(_ url: String) -> Int {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-            p.arguments = ["--max-time", "6", "-s", "-o", "/dev/null", url]
+            p.arguments = ["--max-time", "6", "-s", "-o", "/dev/null", "--noproxy", "*", url]
             p.standardOutput = Pipe(); p.standardError = Pipe()
             try? p.run(); p.waitUntilExit()
             let c = Int(p.terminationStatus)
             return (c == 0 || c == 52 || c == 35) ? 1 : 0
         }
 
-        let l0 = directOk("http://8.8.8.8")
+        let l0 = directOk("http://1.1.1.1")
         let l1 = directOk("http://\(LimmConfig.serverIP):\(LimmConfig.serverPort)")
 
-        let (_, ip) = curl(["--socks5", socks, "https://api.ipify.org"], timeout: 15)
-        let egressIP = ip.trimmingCharacters(in: .whitespacesAndNewlines)
+        let (_, ipRaw) = curl(["--socks5", socks, "https://api.ipify.org"])
+        let egressIP = ipRaw.trimmingCharacters(in: .whitespacesAndNewlines)
         let l4 = egressIP == LimmConfig.serverIP ? 1 : 0
 
-        func svc(_ url: String, markers: [String]) -> String {
-            let (code, body) = curl(["--socks5", socks, url], timeout: 15)
-            if code == "000" { return "down" }
-            if code == "451" { return "blocked" }
-            let lower = body.lowercased()
-            for m in markers { if lower.contains(m) { return "blocked" } }
-            return "ok"
+        // Service probes run in parallel — max time = 1 probe timeout (8s) instead of 3×timeout.
+        var tgStat = "down"; var gglStat = "down"; var chgptStat = "down"
+        let group = DispatchGroup()
+
+        group.enter()
+        DispatchQueue.global().async {
+            let (code, _) = curl(["--socks5", socks, "https://web.telegram.org/"])
+            tgStat = code == "000" ? "down" : code == "451" ? "blocked" : "ok"
+            group.leave()
         }
+
+        group.enter()
+        DispatchQueue.global().async {
+            let (code, _) = curl(["--socks5", socks, "https://www.google.com/search?q=test"])
+            gglStat = code == "000" ? "down" : code == "451" ? "blocked" : "ok"
+            group.leave()
+        }
+
+        group.enter()
+        DispatchQueue.global().async {
+            let (code, body) = curl(["--socks5", socks, "https://chatgpt.com/"])
+            let lower = body.lowercased()
+            let isBlocked = code == "451" || ["unsupported_country", "not available in your country",
+                                               "openai's services are not available"]
+                .contains { lower.contains($0) }
+            chgptStat = code == "000" ? "down" : isBlocked ? "blocked" : "ok"
+            group.leave()
+        }
+
+        group.wait()
 
         return [
             "l0": l0, "l1": l1, "l4": l4,
             "egress_ip": egressIP,
             "vpn_running": UserDefaults.standard.bool(forKey: "v2rayTurnOn") ? 1 : 0,
-            "tg":    svc("https://web.telegram.org/", markers: []),
-            "ggl":   svc("https://www.google.com/search?q=test", markers: []),
-            "chgpt": svc("https://chatgpt.com/", markers: ["unsupported_country",
-                                                             "not available in your country"]),
+            "tg": tgStat, "ggl": gglStat, "chgpt": chgptStat,
         ]
     }
 

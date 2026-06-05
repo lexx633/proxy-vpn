@@ -123,7 +123,6 @@ class MenuController: NSObject, NSMenuDelegate {
         // 5. Diagnostic tools — only when diagnostics enabled
         let checkinOn = UserDefaults.standard.bool(forKey: LimmConfig.checkinEnabledKey)
         if checkinOn {
-            statusMenu.addItem(sendLogMenuItem)
             statusMenu.addItem(fullTestMenuItem)
         }
         // 6. Quit
