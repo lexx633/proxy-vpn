@@ -194,6 +194,7 @@ final class LimmFullTest {
         // Получаем список на main-потоке, затем тестируем каждый профиль.
         let servers = DispatchQueue.main.sync { V2rayServer.list() }.filter { $0.isValid }
         let savedServer = UserDefaults.standard.string(forKey: "v2rayCurrentServerName") ?? ""
+        let wasVpnOn = UserDefaults.standard.bool(forKey: "v2rayTurnOn")
         let wasAutoSwitch = LimmAutoSwitch.shared.isEnabled
         // Останавливаем автопереключение на время теста
         if wasAutoSwitch { DispatchQueue.main.sync { LimmAutoSwitch.shared.stop() } }
@@ -224,12 +225,15 @@ final class LimmFullTest {
             }
         }
 
-        // Восстанавливаем исходный профиль и автопереключение
+        // Восстанавливаем исходный профиль, автопереключение и VPN
         DispatchQueue.main.sync {
             if !savedServer.isEmpty {
                 UserDefaults.set(forKey: .v2rayCurrentServerName, value: savedServer)
             }
             if wasAutoSwitch { LimmAutoSwitch.shared.enable() }
+            // Перезапускаем VPN если он был включён до теста — иначе следующий чек-ин
+            // увидит vpn_running=1 (v2rayTurnOn всё ещё true) но SOCKS закрыт → handshake_fail.
+            if wasVpnOn { V2rayLaunch.startV2rayCore() }
         }
 
         // 4. Отправка лога (VPN выключен → нет loop-проблемы) ─────────
