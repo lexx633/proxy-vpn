@@ -64,6 +64,17 @@ class LimmCheckin {
         }
     }
 
+    /// Pure TCP connect to localhost:port. Returns true if port is listening.
+    /// Uses nc -z (no data sent) — works regardless of protocol on the port.
+    private func socksListening(_ port: Int) -> Bool {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/nc")
+        p.arguments = ["-z", "-G", "1", "127.0.0.1", "\(port)"]
+        p.standardOutput = Pipe(); p.standardError = Pipe()
+        do { try p.run(); p.waitUntilExit() } catch { return false }
+        return p.terminationStatus == 0
+    }
+
     /// Direct TCP reachability (no proxy). L0 = local net, L1/L2 = server reach.
     private func curlDirect(_ url: String, timeout: Int = 6) -> Int {
         let proc = Process()
@@ -123,15 +134,15 @@ class LimmCheckin {
         let socksPort = UserDefaults.standard.integer(forKey: "localSockPort")
             .nonzero ?? 1080
         let socks   = "127.0.0.1:\(socksPort)"
-        // vpnOn: primary = UserDefaults toggle; fallback = SOCKS port actually responding.
+        // vpnOn: primary = UserDefaults toggle; fallback = nc -z TCP probe on SOCKS port.
         // Handles auto-switch / external restarts where v2rayTurnOn wasn't updated.
-        // curlDirect к SOCKS-порту: HTTP→SOCKS5 даёт exit 52/56 (порт открыт) → возвращает 1.
+        // nc -z: pure TCP connect (no protocol); exit 0 = port listening.
         let vpnOn: Bool
         if let ov = overrideVpnOn {
             vpnOn = ov
         } else {
             let prefOn = UserDefaults.standard.bool(forKey: "v2rayTurnOn")
-            let socksUp = !prefOn && curlDirect("http://127.0.0.1:\(socksPort)", timeout: 1) == 1
+            let socksUp = !prefOn && socksListening(socksPort)
             vpnOn = prefOn || socksUp
         }
 
