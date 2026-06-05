@@ -226,12 +226,12 @@ final class LimmFullTest {
         step("Тест IP — запуск #2") { testEgressIP() }
 
         // 8. Чекин #2 (VPN включён — l0-l4 + сервисы через туннель) ──
-        // Таймаут 50с: L0+L1(5+5) + L2/L4(10+15) + parallel probeService(10s) = ~45с макс.
+        // Таймаут 65с: L0+L1(5+5) + L2(10) + L4(15) + parallel probeService(10) = 45s + 20s slack.
         step("Чекин #2") {
             let sem = DispatchSemaphore(value: 0)
             DispatchQueue.global().async { LimmCheckin.shared.perform(); sem.signal() }
-            let r = sem.wait(timeout: .now() + 50)
-            return (true, r == .success ? "probes done" : "timeout 50s")
+            let r = sem.wait(timeout: .now() + 65)
+            return (true, r == .success ? "probes done" : "timeout 65s")
         }
 
         // 9. Финальная остановка VPN ──────────────────────────────────
