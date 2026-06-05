@@ -225,15 +225,15 @@ final class LimmFullTest {
             }
         }
 
-        // Восстанавливаем исходный профиль, автопереключение и VPN
+        // Восстанавливаем исходный профиль и автопереключение.
+        // VPN НЕ запускаем здесь — startV2rayCore может заблокировать main thread
+        // и тогда appendLine (DispatchQueue.main.async) не выполнится → тест зависнет.
+        // Перезапуск делаем ПОСЛЕ markDone (см. ниже).
         DispatchQueue.main.sync {
             if !savedServer.isEmpty {
                 UserDefaults.set(forKey: .v2rayCurrentServerName, value: savedServer)
             }
             if wasAutoSwitch { LimmAutoSwitch.shared.enable() }
-            // Перезапускаем VPN если он был включён до теста — иначе следующий чек-ин
-            // увидит vpn_running=1 (v2rayTurnOn всё ещё true) но SOCKS закрыт → handshake_fail.
-            if wasVpnOn { V2rayLaunch.startV2rayCore() }
         }
 
         // 4. Отправка лога (VPN выключен → нет loop-проблемы) ─────────
@@ -258,6 +258,12 @@ final class LimmFullTest {
 
         DispatchQueue.main.async { self.isRunning = false }
         w.markDone()
+
+        // Перезапускаем VPN если он был включён до теста — делаем это ПОСЛЕ markDone
+        // (async, не блокируя фоновый поток и не мешая main thread обрабатывать appendLine).
+        if wasVpnOn {
+            DispatchQueue.main.async { V2rayLaunch.startV2rayCore() }
+        }
     }
 
     // MARK: - IP probe through SOCKS

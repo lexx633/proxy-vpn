@@ -89,6 +89,26 @@ class LimmCheckin {
         return "ok"
     }
 
+    /// Measure full HTTP roundtrip through SOCKS (tunnel latency).
+    /// Returns milliseconds or nil on failure. Uses a single attempt with short timeout.
+    private func measureTunnelMs(socks: String) -> Int? {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+        proc.arguments = ["--max-time", "5", "-s", "-o", "/dev/null",
+                          "-w", "%{time_total}",
+                          "--socks5", socks,
+                          "https://www.gstatic.com/generate_204"]
+        let outPipe = Pipe()
+        proc.standardOutput = outPipe
+        proc.standardError  = Pipe()
+        do {
+            try proc.run(); proc.waitUntilExit()
+        } catch { return nil }
+        let raw = String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        guard let sec = Double(raw.trimmingCharacters(in: .whitespacesAndNewlines)), sec > 0 else { return nil }
+        return Int(sec * 1000)
+    }
+
     // MARK: - Main checkin
 
     /// Synchronously runs all curl probes, then fires HTTP POST (async, fire-and-forget).
@@ -124,6 +144,7 @@ class LimmCheckin {
         var tgStatus     = "down"
         var gglStatus    = "down"
         var chgptStatus  = "down"
+        var tunnelMs: Int? = nil
 
         if vpnOn {
             // L2/L3 — connect to server through SOCKS
@@ -140,6 +161,9 @@ class LimmCheckin {
                 egressIP = ipBody.trimmingCharacters(in: .whitespacesAndNewlines)
                 l4 = (egressIP == LimmConfig.serverIP) ? 1 : 0
             }
+
+            // tunnel_ms — full HTTP roundtrip through VPN tunnel (gstatic generate_204)
+            tunnelMs = measureTunnelMs(socks: socks)
 
             // Service probes — run in parallel so all 3 take ≤10s instead of 3×10s sequential
             let probeGroup = DispatchGroup()
@@ -170,12 +194,13 @@ class LimmCheckin {
         }
 
         let services: [String: Any] = ["tg": tgStatus, "ggl": gglStatus, "chgpt": chgptStatus]
-        let raw: [String: Any] = [
+        var raw: [String: Any] = [
             "dest_google":   destGoogle,
             "dest_telegram": destTelegram,
             "services":      services,
             "egress_ip":     egressIP,
         ]
+        if let ms = tunnelMs { raw["tunnel_ms"] = ms }
 
         var payload: [String: Any] = [
             "client_uid":  uid,
