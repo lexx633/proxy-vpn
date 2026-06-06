@@ -137,34 +137,53 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         UserDefaults.standard.set(sender.state == .on, forKey: LimmConfig.autoConnectKey)
     }
 
+    // Countdown timer for the checkin button
+    private var checkinCountdownTimer: Timer?
+    private var checkinSecondsLeft = 30
+
     @objc private func runCheckin(_ sender: NSButton) {
         checkinButton.isEnabled = false
-        checkinButton.title     = "Sending…"
 
-        // Guard: если checkin не ответил за 30 сек — показываем ошибку.
-        // perform() может блокировать ~70s при ISP-блоке прямых probe; таймаут ограничивает UI.
+        // ── Countdown ticker ────────────────────────────────────────────
+        checkinSecondsLeft = 30
+        checkinButton.title = "Sending… \(checkinSecondsLeft)s"
+        checkinCountdownTimer?.invalidate()
+        checkinCountdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] t in
+            guard let self = self else { t.invalidate(); return }
+            self.checkinSecondsLeft -= 1
+            if self.checkinSecondsLeft > 0 {
+                self.checkinButton.title = "Sending… \(self.checkinSecondsLeft)s"
+            }
+        }
+
         var done = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
-            guard let self = self, !done else { return }
-            done = true
+        func finish(ok: Bool, title: String, info: String) {
+            self.checkinCountdownTimer?.invalidate()
+            self.checkinCountdownTimer = nil
             self.checkinButton.isEnabled = true
             self.checkinButton.title     = "Send Status Checkin"
             let alert = NSAlert()
-            alert.messageText     = "❌ Timeout"
-            alert.informativeText = "No response in 30 seconds. Check VPN connection."
+            alert.messageText     = title
+            alert.informativeText = info
             alert.runModal()
+        }
+
+        // Таймаут 30с — если perform() завис на ISP-блоке curl-проб
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+            guard let self = self, !done else { return }
+            done = true
+            finish(ok: false,
+                   title: "❌ Timeout",
+                   info:  "No response in 30 seconds. Check VPN connection.")
         }
 
         LimmCheckin.shared.runOnce { code, msg in
             DispatchQueue.main.async {
                 guard !done else { return }
                 done = true
-                self.checkinButton.isEnabled = true
-                self.checkinButton.title     = "Send Status Checkin"
-                let alert = NSAlert()
-                alert.messageText     = code == 200 ? "✅ Checkin sent" : "❌ Checkin failed"
-                alert.informativeText = code == 200 ? "Status updated on limm.space/stat" : msg
-                alert.runModal()
+                finish(ok: code == 200,
+                       title: code == 200 ? "✅ Checkin sent"   : "❌ Checkin failed",
+                       info:  code == 200 ? "Status updated on limm.space/stat" : msg)
             }
         }
     }
