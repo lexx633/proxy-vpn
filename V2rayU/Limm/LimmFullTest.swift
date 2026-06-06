@@ -92,8 +92,12 @@ final class LimmFullTestWindowController: NSWindowController {
     // MARK: - Logging
 
     func appendLine(_ text: String, color: NSColor? = nil) {
-        let run = { [weak self] in
-            guard let self = self else { return }
+        // Strong capture [self]: keeps the window controller alive until the closure
+        // executes on the main thread. Without this, execute() returning on the
+        // background thread may release the last strong reference to the controller
+        // before main processes the queued closures, causing [weak self] to be nil
+        // and silently dropping all text (including the footer) + blocking markDone.
+        let run = { [self] in
             let c = color ?? self.palette(text)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font:            NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
@@ -117,9 +121,10 @@ final class LimmFullTestWindowController: NSWindowController {
     }
 
     func markDone() {
-        let run = { [weak self] in
-            self?.spinner.stopAnimation(nil)
-            self?.closeBtn.isEnabled = true
+        // Strong capture [self] — same reason as appendLine above.
+        let run = { [self] in
+            self.spinner.stopAnimation(nil)
+            self.closeBtn.isEnabled = true
         }
         Thread.isMainThread ? run() : DispatchQueue.main.async(execute: run)
     }
