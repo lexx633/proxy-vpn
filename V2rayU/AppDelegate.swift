@@ -97,9 +97,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // limm: auto-switch to fastest server (resumes if was enabled)
         LimmAutoSwitch.shared.start()
 
-        // limm: auto check updates from lexx633/vpn-mac releases
+        // limm: auto check updates — only if enabled AND >30 days since last check.
+        // Stores last check timestamp so the app doesn't ping GitHub on every launch.
         if UserDefaults.getBool(forKey: .autoCheckVersion) {
-            LimmUpdater.shared.checkForUpdates(silent: true)
+            let lastTs   = UserDefaults.standard.double(forKey: LimmConfig.lastUpdateCheckKey)
+            let daysSince = (Date().timeIntervalSince1970 - lastTs) / 86_400
+            if daysSince >= 30 {
+                UserDefaults.standard.set(Date().timeIntervalSince1970,
+                                          forKey: LimmConfig.lastUpdateCheckKey)
+                LimmUpdater.shared.checkForUpdates(silent: true)
+            }
         }
     }
 

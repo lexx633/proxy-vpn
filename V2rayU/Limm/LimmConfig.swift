@@ -28,8 +28,9 @@ enum LimmConfig {
     static let autoServerKey      = "limmAutoServer"       // Bool — auto-switch enabled
     static let switchGapKey       = "limmAutoSwitchGap"   // String — gap threshold in ms (default "50")
     static let switchCooldownKey  = "limmAutoSwitchCooldown" // String — min minutes between switches (default "5")
-    static let failedProfilesKey  = "limmFailedProfiles"  // [String] — server names that failed Full Test; skipped by auto-switch
-    static let autoConnectKey     = "limmAutoConnect"      // Bool — auto-start VPN on app launch
+    static let failedProfilesKey  = "limmFailedProfiles"   // [String] — server names that failed Full Test; skipped by auto-switch
+    static let autoConnectKey     = "limmAutoConnect"       // Bool — auto-start VPN on app launch
+    static let lastUpdateCheckKey = "limmLastUpdateCheck"  // Double — unix timestamp of last update check
 
     // Stable per-device UUID (auto-generated on first launch)
     static func clientUID() -> String {

@@ -35,6 +35,9 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         autoUpdateServers.state    = UserDefaults.getBool(forKey: .autoUpdateServers)        ? .on : .off
         autoSelectFastServer.state = UserDefaults.getBool(forKey: .autoSelectFastestServer)  ? .on : .off
 
+        // Fix NIB label typo: "automutically" → "automatically"
+        autoCheckVersion.title = "Check for updates automatically"
+
         // Force AutoLayout to resolve NIB constraints so view.frame.height is valid.
         view.layoutSubtreeIfNeeded()
         buildLimmSection()
@@ -62,19 +65,19 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         limmBox.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(limmBox)
 
-        // ── Checkin toggle ───────────────────────────────────────
-        checkinCheckbox = NSButton(checkboxWithTitle: "Отправлять диагностику на limm.space каждые 15 мин",
-                                   target: self, action: #selector(checkinToggled(_:)))
-        checkinCheckbox.translatesAutoresizingMaskIntoConstraints = false
-        checkinCheckbox.state = UserDefaults.standard.bool(forKey: LimmConfig.checkinEnabledKey) ? .on : .off
-        limmBox.addSubview(checkinCheckbox)
-
-        // ── Auto-connect toggle ──────────────────────────────────
-        autoConnectCheckbox = NSButton(checkboxWithTitle: "Авто-подключение при запуске (последний профиль)",
+        // ── Auto-connect toggle (first row — directly below NIB "Check for updates") ──
+        autoConnectCheckbox = NSButton(checkboxWithTitle: "Auto-connect on launch",
                                        target: self, action: #selector(autoConnectToggled(_:)))
         autoConnectCheckbox.translatesAutoresizingMaskIntoConstraints = false
         autoConnectCheckbox.state = UserDefaults.standard.bool(forKey: LimmConfig.autoConnectKey) ? .on : .off
         limmBox.addSubview(autoConnectCheckbox)
+
+        // ── Checkin toggle ───────────────────────────────────────
+        checkinCheckbox = NSButton(checkboxWithTitle: "Send diagnostics to limm.space every 15 min",
+                                   target: self, action: #selector(checkinToggled(_:)))
+        checkinCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        checkinCheckbox.state = UserDefaults.standard.bool(forKey: LimmConfig.checkinEnabledKey) ? .on : .off
+        limmBox.addSubview(checkinCheckbox)
 
         // ── Send log button ──────────────────────────────────────
         sendLogButton = NSButton(title: "Send Diagnostic Log",
@@ -84,7 +87,7 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         limmBox.addSubview(sendLogButton)
 
         // ── Checkin button ───────────────────────────────────────
-        checkinButton = NSButton(title: "Чекин статуса",
+        checkinButton = NSButton(title: "Send Status Checkin",
                                  target: self, action: #selector(runCheckin(_:)))
         checkinButton.bezelStyle = .rounded
         checkinButton.translatesAutoresizingMaskIntoConstraints = false
@@ -100,16 +103,16 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
             limmBox.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             limmBox.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8),
 
-            // Row 1: Checkin toggle
-            checkinCheckbox.topAnchor.constraint(equalTo: limmBox.topAnchor, constant: 20),
-            checkinCheckbox.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
-
-            // Row 2: Auto-connect toggle
-            autoConnectCheckbox.topAnchor.constraint(equalTo: checkinCheckbox.bottomAnchor, constant: 8),
+            // Row 1: Auto-connect (first — closest to NIB "Check for updates" above)
+            autoConnectCheckbox.topAnchor.constraint(equalTo: limmBox.topAnchor, constant: 20),
             autoConnectCheckbox.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
 
-            // Row 3: Send log | Чекин (side by side)
-            sendLogButton.topAnchor.constraint(equalTo: autoConnectCheckbox.bottomAnchor, constant: 12),
+            // Row 2: Diagnostics checkin toggle
+            checkinCheckbox.topAnchor.constraint(equalTo: autoConnectCheckbox.bottomAnchor, constant: 8),
+            checkinCheckbox.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
+
+            // Row 3: Buttons (side by side)
+            sendLogButton.topAnchor.constraint(equalTo: checkinCheckbox.bottomAnchor, constant: 12),
             sendLogButton.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
             sendLogButton.bottomAnchor.constraint(equalTo: limmBox.bottomAnchor, constant: -16),
 
@@ -136,14 +139,31 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
 
     @objc private func runCheckin(_ sender: NSButton) {
         checkinButton.isEnabled = false
-        checkinButton.title     = "Отправляем…"
+        checkinButton.title     = "Sending…"
+
+        // Guard: если checkin не ответил за 30 сек — показываем ошибку.
+        // perform() может блокировать ~70s при ISP-блоке прямых probe; таймаут ограничивает UI.
+        var done = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+            guard let self = self, !done else { return }
+            done = true
+            self.checkinButton.isEnabled = true
+            self.checkinButton.title     = "Send Status Checkin"
+            let alert = NSAlert()
+            alert.messageText     = "❌ Timeout"
+            alert.informativeText = "No response in 30 seconds. Check VPN connection."
+            alert.runModal()
+        }
+
         LimmCheckin.shared.runOnce { code, msg in
             DispatchQueue.main.async {
+                guard !done else { return }
+                done = true
                 self.checkinButton.isEnabled = true
-                self.checkinButton.title     = "Чекин статуса"
+                self.checkinButton.title     = "Send Status Checkin"
                 let alert = NSAlert()
-                alert.messageText     = code == 200 ? "✅ Чекин отправлен" : "❌ Ошибка чекина"
-                alert.informativeText = code == 200 ? "Статус обновлён на limm.space/stat" : msg
+                alert.messageText     = code == 200 ? "✅ Checkin sent" : "❌ Checkin failed"
+                alert.informativeText = code == 200 ? "Status updated on limm.space/stat" : msg
                 alert.runModal()
             }
         }
@@ -190,7 +210,9 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
     }
 
     // "Check for Updates..." → наш LimmUpdater (не Sparkle)
+    // Сбрасываем lastUpdateCheck чтобы месячный таймер отсчитался заново.
     @IBAction func checkVersion(_ sender: NSButton) {
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: LimmConfig.lastUpdateCheckKey)
         LimmUpdater.shared.checkForUpdates(silent: false)
     }
 }
