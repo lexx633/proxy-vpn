@@ -36,6 +36,34 @@ class LimmCheckin {
         DispatchQueue.global(qos: .background).async { self.perform() }
     }
 
+    /// One-shot checkin button: run full perform() on background queue, call completion on result.
+    func runOnce(completion: @escaping (Int, String) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            self.perform(checkinCompletion: completion)
+        }
+    }
+
+    /// Lightweight post-Full-Test checkin — no curl probes, just POSTs "VPN is on"
+    /// with results we already know from the test. Fires completion from URLSession callback.
+    /// egressLatencyMs: latency of the working profile (from curl api.ipify.org probe).
+    func performQuick(egressLatencyMs: Int?, completion: @escaping (Int, String) -> Void) {
+        let uid = LimmConfig.clientUID()
+        var payload: [String: Any] = [
+            "client_uid":   uid,
+            "kind":         LimmConfig.clientKind,
+            "label":        LimmConfig.clientLabel,
+            "app_version":  LimmConfig.appVersion,
+            "l0_local_net": 1, "l1_tcp443": 1, "l2_handshake": 1, "l3_tunnel": 1, "l4_dest": 1,
+            "vpn_running":  1,
+            "raw": ["egress_ip": LimmConfig.serverIP,
+                    "dest_google": "ok", "dest_telegram": "ok",
+                    "services": ["tg": "ok", "ggl": "ok", "chgpt": "ok"]],
+        ]
+        if let ms = egressLatencyMs { payload["tunnel_ms"] = ms }
+        NSLog("[Limm] performQuick vpn=1 tunnel=%@ms", egressLatencyMs.map { "\($0)" } ?? "nil")
+        postCheckin(payload: payload, token: LimmConfig.token, completion: completion)
+    }
+
     // MARK: - Probes
 
     /// Run curl and return (http_code_string, body). Returns ("000","") on failure.

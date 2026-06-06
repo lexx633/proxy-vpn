@@ -20,18 +20,20 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
     @IBOutlet weak var autoSelectFastServer: NSButtonCell!
 
     // Limm UI — created programmatically
-    private var limmBox:         NSBox!
-    private var checkinCheckbox: NSButton!
-    private var sendLogButton:   NSButton!
+    private var limmBox:             NSBox!
+    private var checkinCheckbox:     NSButton!
+    private var autoConnectCheckbox: NSButton!
+    private var sendLogButton:       NSButton!
+    private var checkinButton:       NSButton!
 
     override func viewDidLoad() {
         super.viewDidLoad()
 
         // Restore original checkboxes
-        autoLaunch.state          = UserDefaults.getBool(forKey: .autoLaunch)          ? .on : .off
-        autoCheckVersion.state    = UserDefaults.getBool(forKey: .autoCheckVersion)    ? .on : .off
-        autoUpdateServers.state   = UserDefaults.getBool(forKey: .autoUpdateServers)   ? .on : .off
-        autoSelectFastServer.state = UserDefaults.getBool(forKey: .autoSelectFastestServer) ? .on : .off
+        autoLaunch.state           = UserDefaults.getBool(forKey: .autoLaunch)               ? .on : .off
+        autoCheckVersion.state     = UserDefaults.getBool(forKey: .autoCheckVersion)         ? .on : .off
+        autoUpdateServers.state    = UserDefaults.getBool(forKey: .autoUpdateServers)        ? .on : .off
+        autoSelectFastServer.state = UserDefaults.getBool(forKey: .autoSelectFastestServer)  ? .on : .off
 
         // Force AutoLayout to resolve NIB constraints so view.frame.height is valid.
         view.layoutSubtreeIfNeeded()
@@ -46,7 +48,7 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         // so frame can be zero even after layoutSubtreeIfNeeded().
         let nibW:  CGFloat = 700
         let nibH:  CGFloat = 360
-        let addH:  CGFloat = 90
+        let addH:  CGFloat = 120   // extended: +row for autoConnect + checkin button
         view.frame.size.height = nibH + addH
         preferredContentSize   = NSSize(width: nibW, height: nibH + addH)
 
@@ -67,12 +69,26 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         checkinCheckbox.state = UserDefaults.standard.bool(forKey: LimmConfig.checkinEnabledKey) ? .on : .off
         limmBox.addSubview(checkinCheckbox)
 
+        // ── Auto-connect toggle ──────────────────────────────────
+        autoConnectCheckbox = NSButton(checkboxWithTitle: "Авто-подключение при запуске (последний профиль)",
+                                       target: self, action: #selector(autoConnectToggled(_:)))
+        autoConnectCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        autoConnectCheckbox.state = UserDefaults.standard.bool(forKey: LimmConfig.autoConnectKey) ? .on : .off
+        limmBox.addSubview(autoConnectCheckbox)
+
         // ── Send log button ──────────────────────────────────────
         sendLogButton = NSButton(title: "Send Diagnostic Log",
                                  target: self, action: #selector(sendDiagnosticLog(_:)))
         sendLogButton.bezelStyle = .rounded
         sendLogButton.translatesAutoresizingMaskIntoConstraints = false
         limmBox.addSubview(sendLogButton)
+
+        // ── Checkin button ───────────────────────────────────────
+        checkinButton = NSButton(title: "Чекин статуса",
+                                 target: self, action: #selector(runCheckin(_:)))
+        checkinButton.bezelStyle = .rounded
+        checkinButton.translatesAutoresizingMaskIntoConstraints = false
+        limmBox.addSubview(checkinButton)
 
         // ── Constraints ──────────────────────────────────────────
         let col1: CGFloat = 16
@@ -84,14 +100,21 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
             limmBox.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             limmBox.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8),
 
-            // Checkin
+            // Row 1: Checkin toggle
             checkinCheckbox.topAnchor.constraint(equalTo: limmBox.topAnchor, constant: 20),
             checkinCheckbox.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
 
-            // Send log
-            sendLogButton.topAnchor.constraint(equalTo: checkinCheckbox.bottomAnchor, constant: 12),
+            // Row 2: Auto-connect toggle
+            autoConnectCheckbox.topAnchor.constraint(equalTo: checkinCheckbox.bottomAnchor, constant: 8),
+            autoConnectCheckbox.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
+
+            // Row 3: Send log | Чекин (side by side)
+            sendLogButton.topAnchor.constraint(equalTo: autoConnectCheckbox.bottomAnchor, constant: 12),
             sendLogButton.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
             sendLogButton.bottomAnchor.constraint(equalTo: limmBox.bottomAnchor, constant: -16),
+
+            checkinButton.centerYAnchor.constraint(equalTo: sendLogButton.centerYAnchor),
+            checkinButton.leadingAnchor.constraint(equalTo: sendLogButton.trailingAnchor, constant: 10),
         ])
     }
 
@@ -104,6 +127,25 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
             LimmCheckin.shared.start()
         } else {
             LimmCheckin.shared.stop()
+        }
+    }
+
+    @objc private func autoConnectToggled(_ sender: NSButton) {
+        UserDefaults.standard.set(sender.state == .on, forKey: LimmConfig.autoConnectKey)
+    }
+
+    @objc private func runCheckin(_ sender: NSButton) {
+        checkinButton.isEnabled = false
+        checkinButton.title     = "Отправляем…"
+        LimmCheckin.shared.runOnce { code, msg in
+            DispatchQueue.main.async {
+                self.checkinButton.isEnabled = true
+                self.checkinButton.title     = "Чекин статуса"
+                let alert = NSAlert()
+                alert.messageText     = code == 200 ? "✅ Чекин отправлен" : "❌ Ошибка чекина"
+                alert.informativeText = code == 200 ? "Статус обновлён на limm.space/stat" : msg
+                alert.runModal()
+            }
         }
     }
 

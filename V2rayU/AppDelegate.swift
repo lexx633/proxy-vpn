@@ -83,8 +83,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         ShortcutsController.bindShortcuts()
 
-        // run v2ray at start
+        // run v2ray at start (restores last state if was running)
         V2rayLaunch.runAtStart()
+        // limm: auto-connect — always connect to last profile on launch, regardless of last state
+        if UserDefaults.standard.bool(forKey: LimmConfig.autoConnectKey) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                V2rayLaunch.startV2rayCore()
+            }
+        }
 
         // limm: checkin every 15 min
         LimmCheckin.shared.start()

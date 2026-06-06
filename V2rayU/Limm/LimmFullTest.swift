@@ -267,9 +267,14 @@ final class LimmFullTest {
         // 4.5. Чекин с рабочим профилем → заполняет Статус/Сервисы/Пинг в дашборде.
         // Начало Full Test делало чекин с vpnOn=false; здесь отправляем финальный
         // чекин с поднятым VPN чтобы дашборд не застрял в «VPN выключен».
+        //
+        // ВАЖНО: не используем perform() — он запускает все curl-пробы синхронно
+        // (L1 ×3 по 5s при ISP-блоке = 15s + L4 + tunnel×3 + services = до 70s),
+        // что вешает шаг. Вместо этого — performQuick(): прямой POST без проб, <1s.
         if let bestIdx = profileResults.firstIndex(where: { $0.ok }) {
-            let bestServer = servers[bestIdx]
-            let bestLabel = bestServer.remark.isEmpty ? bestServer.name : bestServer.remark
+            let bestServer  = servers[bestIdx]
+            let bestLabel   = bestServer.remark.isEmpty ? bestServer.name : bestServer.remark
+            let bestLatency = profileResults[bestIdx].latencyMs   // egress latency из теста
             w.appendLine("\n")
             step("Чекин (VPN on · \(bestLabel))") {
                 DispatchQueue.main.sync {
@@ -284,14 +289,14 @@ final class LimmFullTest {
                 }
                 let sem = DispatchSemaphore(value: 0)
                 var httpCode = 0; var httpMsg = ""
-                // overrideVpnOn=nil (default) → nc -z check → true (SOCKS is up)
-                LimmCheckin.shared.perform { code, msg in
+                // performQuick: нет curl-проб, сразу POST → завершается за <1s
+                LimmCheckin.shared.performQuick(egressLatencyMs: bestLatency) { code, msg in
                     httpCode = code; httpMsg = msg; sem.signal()
                 }
-                let r = sem.wait(timeout: .now() + 45)
+                let r = sem.wait(timeout: .now() + 10)
                 DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
                 Thread.sleep(forTimeInterval: 0.5)
-                if r == .timedOut { return (false, "timeout 45s") }
+                if r == .timedOut { return (false, "timeout 10s") }
                 return (httpCode == 200,
                         httpCode == 200 ? "ok \(httpCode)" : "fail \(httpCode) \(httpMsg.prefix(40))")
             }
