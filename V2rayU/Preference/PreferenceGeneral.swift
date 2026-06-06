@@ -144,27 +144,29 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         UserDefaults.standard.set(sender.state == .on, forKey: LimmConfig.autoConnectKey)
     }
 
-    // Countdown timer for the checkin button
+    // ── Countdown timers ─────────────────────────────────────────
     private var checkinCountdownTimer: Timer?
-    private var checkinSecondsLeft = 30
+    private var checkinSecondsLeft = 15
+    private var logCountdownTimer:   Timer?
+    private var logSecondsLeft     = 55
+
+    // MARK: - Send Status Checkin
 
     @objc private func runCheckin(_ sender: NSButton) {
         checkinButton.isEnabled = false
 
-        // ── Countdown ticker ────────────────────────────────────────────
-        checkinSecondsLeft = 30
+        // Countdown: runOnceQuick completes in <2s (instant POST), so 15s is ample
+        checkinSecondsLeft = 15
         checkinButton.title = "Sending… \(checkinSecondsLeft)s"
         checkinCountdownTimer?.invalidate()
         checkinCountdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] t in
             guard let self = self else { t.invalidate(); return }
             self.checkinSecondsLeft -= 1
-            if self.checkinSecondsLeft > 0 {
-                self.checkinButton.title = "Sending… \(self.checkinSecondsLeft)s"
-            }
+            if self.checkinSecondsLeft > 0 { self.checkinButton.title = "Sending… \(self.checkinSecondsLeft)s" }
         }
 
         var done = false
-        func finish(ok: Bool, title: String, info: String) {
+        func finishCheckin(ok: Bool, title: String, info: String) {
             self.checkinCountdownTimer?.invalidate()
             self.checkinCountdownTimer = nil
             self.checkinButton.isEnabled = true
@@ -175,38 +177,64 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
             alert.runModal()
         }
 
-        // Таймаут 30с — если perform() завис на ISP-блоке curl-проб
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
             guard let self = self, !done else { return }
             done = true
-            finish(ok: false,
-                   title: "❌ Timeout",
-                   info:  "No response in 30 seconds. Check VPN connection.")
+            finishCheckin(ok: false, title: "❌ Timeout", info: "No response in 15 seconds.")
         }
 
-        LimmCheckin.shared.runOnce { code, msg in
+        // runOnceQuick: instant if VPN up (performQuick), ≤6s if VPN off (L0 + POST)
+        LimmCheckin.shared.runOnceQuick { code, msg in
             DispatchQueue.main.async {
                 guard !done else { return }
                 done = true
-                finish(ok: code == 200,
-                       title: code == 200 ? "✅ Checkin sent"   : "❌ Checkin failed",
-                       info:  code == 200 ? "Status updated on limm.space/stat" : msg)
+                finishCheckin(ok: code == 200,
+                              title: code == 200 ? "✅ Checkin sent"  : "❌ Checkin failed",
+                              info:  code == 200 ? "Status updated on limm.space/stat" : msg)
             }
         }
     }
 
+    // MARK: - Send Diagnostic Log
+
     @objc private func sendDiagnosticLog(_ sender: NSButton) {
         sendLogButton.isEnabled = false
-        sendLogButton.title     = "Отправляем..."
+
+        // Countdown: probes are capped at ~18s worst case + 20s upload = ~38s. 55s is safe.
+        logSecondsLeft = 55
+        sendLogButton.title = "Sending… \(logSecondsLeft)s"
+        logCountdownTimer?.invalidate()
+        logCountdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] t in
+            guard let self = self else { t.invalidate(); return }
+            self.logSecondsLeft -= 1
+            if self.logSecondsLeft > 0 { self.sendLogButton.title = "Sending… \(self.logSecondsLeft)s" }
+        }
+
+        var done = false
+        func finishLog(ok: Bool, title: String, info: String) {
+            self.logCountdownTimer?.invalidate()
+            self.logCountdownTimer = nil
+            self.sendLogButton.isEnabled = true
+            self.sendLogButton.title     = "Send Diagnostic Log"
+            let alert = NSAlert()
+            alert.messageText     = title
+            alert.informativeText = info
+            alert.runModal()
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 55) { [weak self] in
+            guard let self = self, !done else { return }
+            done = true
+            finishLog(ok: false, title: "❌ Timeout", info: "Log upload took too long (>55s).")
+        }
 
         LimmLogReporter.shared.send { ok, msg in
             DispatchQueue.main.async {
-                self.sendLogButton.isEnabled = true
-                self.sendLogButton.title     = "Send Diagnostic Log"
-                let alert = NSAlert()
-                alert.messageText     = ok ? "✅ Лог отправлен" : "❌ Ошибка отправки"
-                alert.informativeText = msg
-                alert.runModal()
+                guard !done else { return }
+                done = true
+                finishLog(ok: ok,
+                          title: ok ? "✅ Лог отправлен" : "❌ Ошибка отправки",
+                          info:  msg)
             }
         }
     }

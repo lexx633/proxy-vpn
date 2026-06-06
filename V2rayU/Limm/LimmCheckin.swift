@@ -43,6 +43,37 @@ class LimmCheckin {
         }
     }
 
+    /// Fast one-shot for the "Send Status Checkin" button — completes in <2s.
+    /// • VPN SOCKS port alive → performQuick (no curl probes, instant POST)
+    /// • VPN off             → one L0 probe (≤5s) + POST with vpn_running=0
+    /// Avoids the full perform() that takes 30–75s and always triggered the 30s UI timeout.
+    func runOnceQuick(completion: @escaping (Int, String) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let socksPort = (UserDefaults.standard.integer(forKey: "localSockPort")).nonzero ?? 1080
+            let prefOn    = UserDefaults.standard.bool(forKey: "v2rayTurnOn")
+            let vpnOn     = prefOn || self.socksListening(socksPort)
+            if vpnOn {
+                // Instant: no probes, just POST "VPN is on"
+                self.performQuick(egressLatencyMs: nil, completion: completion)
+            } else {
+                // Minimal: one L0 connectivity probe + POST "VPN is off"
+                let l0 = self.curlDirect("http://1.1.1.1", timeout: 5)
+                let payload: [String: Any] = [
+                    "client_uid":   LimmConfig.clientUID(),
+                    "kind":         LimmConfig.clientKind,
+                    "label":        LimmConfig.clientLabel,
+                    "app_version":  LimmConfig.appVersion,
+                    "l0_local_net": l0, "l1_tcp443": 0,
+                    "l2_handshake": 0,  "l3_tunnel": 0, "l4_dest": 0,
+                    "vpn_running":  0,
+                    "raw": ["egress_ip": "", "dest_google": "down", "dest_telegram": "down",
+                            "services": ["tg": "down", "ggl": "down", "chgpt": "down"]],
+                ]
+                self.postCheckin(payload: payload, token: LimmConfig.token, completion: completion)
+            }
+        }
+    }
+
     /// Lightweight post-Full-Test checkin — no curl probes, just POSTs "VPN is on"
     /// with results we already know from the test. Fires completion from URLSession callback.
     /// egressLatencyMs: latency of the working profile (from curl api.ipify.org probe).

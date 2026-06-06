@@ -41,10 +41,14 @@ class LimmLogReporter {
     }
 
     private func collectProbe(socks: String) -> [String: Any] {
-        func curl(_ args: [String], timeout: Int = 8) -> (String, String) {
+        // Timeouts are kept short: this runs inside the 55s log-button window.
+        // Worst case: 3s(l0) + 3s(l1) + 5s(ipify) + 5s(parallel services) + 20s(upload) = ~36s.
+        func curl(_ args: [String], timeout: Int = 5) -> (String, String) {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-            p.arguments = ["--max-time", "\(timeout)", "-s", "-L",
+            p.arguments = ["--max-time", "\(timeout)",
+                           "--connect-timeout", "\(max(timeout - 1, 2))",
+                           "-s", "-L",
                            "-A", "Mozilla/5.0 (limm-log)",
                            "-w", "\n%{http_code}"] + args
             let out = Pipe(); p.standardOutput = out; p.standardError = Pipe()
@@ -61,7 +65,8 @@ class LimmLogReporter {
         func directOk(_ url: String) -> Int {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-            p.arguments = ["--max-time", "6", "-s", "-o", "/dev/null", "--noproxy", "*", url]
+            p.arguments = ["--max-time", "3", "--connect-timeout", "3",
+                           "-s", "-o", "/dev/null", "--noproxy", "*", url]
             p.standardOutput = Pipe(); p.standardError = Pipe()
             try? p.run(); p.waitUntilExit()
             let c = Int(p.terminationStatus)
@@ -75,7 +80,7 @@ class LimmLogReporter {
         let egressIP = ipRaw.trimmingCharacters(in: .whitespacesAndNewlines)
         let l4 = egressIP == LimmConfig.serverIP ? 1 : 0
 
-        // Service probes run in parallel — max time = 1 probe timeout (8s) instead of 3×timeout.
+        // Service probes run in parallel — max time = 1 probe timeout (5s) instead of 3×timeout.
         var tgStat = "down"; var gglStat = "down"; var chgptStat = "down"
         let group = DispatchGroup()
 
@@ -158,13 +163,13 @@ class LimmLogReporter {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer \(LimmConfig.token)", forHTTPHeaderField: "Authorization")
         req.httpBody    = body
-        req.timeoutInterval = 30
+        req.timeoutInterval = 20
 
         // Use ephemeral session with no proxy — avoids "network connection was lost"
         // when VPN is stopped but system proxy (127.0.0.1:1080) is still configured.
         let cfg = URLSessionConfiguration.ephemeral
         cfg.connectionProxyDictionary = [:]
-        cfg.timeoutIntervalForRequest = 30
+        cfg.timeoutIntervalForRequest = 20
         URLSession(configuration: cfg).dataTask(with: req) { data, resp, err in
             if let err = err { completion(false, err.localizedDescription); return }
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
