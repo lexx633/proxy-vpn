@@ -261,6 +261,42 @@ final class LimmFullTest {
             profileResults.append((name: label, ok: profileOk, latencyMs: profileMs))
         }
 
+        // 4. Загружаем результаты профилей на сервер ─────────────────
+        postFullTestResults(profileResults)
+
+        // 4.5. Чекин с рабочим профилем → заполняет Статус/Сервисы/Пинг в дашборде.
+        // Начало Full Test делало чекин с vpnOn=false; здесь отправляем финальный
+        // чекин с поднятым VPN чтобы дашборд не застрял в «VPN выключен».
+        if let bestIdx = profileResults.firstIndex(where: { $0.ok }) {
+            let bestServer = servers[bestIdx]
+            let bestLabel = bestServer.remark.isEmpty ? bestServer.name : bestServer.remark
+            w.appendLine("\n")
+            step("Чекин (VPN on · \(bestLabel))") {
+                DispatchQueue.main.sync {
+                    UserDefaults.set(forKey: .v2rayCurrentServerName, value: bestServer.name)
+                    V2rayLaunch.startV2rayCore()
+                }
+                let port = (UserDefaults.standard.integer(forKey: "localSockPort")).nonzero ?? 1080
+                guard waitForSocks(port: port, maxSec: 12) else {
+                    DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
+                    Thread.sleep(forTimeInterval: 0.5)
+                    return (false, "SOCKS не поднялся за 12s")
+                }
+                let sem = DispatchSemaphore(value: 0)
+                var httpCode = 0; var httpMsg = ""
+                // overrideVpnOn=nil (default) → nc -z check → true (SOCKS is up)
+                LimmCheckin.shared.perform { code, msg in
+                    httpCode = code; httpMsg = msg; sem.signal()
+                }
+                let r = sem.wait(timeout: .now() + 45)
+                DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
+                Thread.sleep(forTimeInterval: 0.5)
+                if r == .timedOut { return (false, "timeout 45s") }
+                return (httpCode == 200,
+                        httpCode == 200 ? "ok \(httpCode)" : "fail \(httpCode) \(httpMsg.prefix(40))")
+            }
+        }
+
         // Восстанавливаем исходный профиль и автопереключение.
         // VPN НЕ запускаем здесь — startV2rayCore может заблокировать main thread
         // и тогда appendLine (DispatchQueue.main.async) не выполнится → тест зависнет.
@@ -271,9 +307,6 @@ final class LimmFullTest {
             }
             if wasAutoSwitch { LimmAutoSwitch.shared.enable() }
         }
-
-        // 4. Загружаем результаты профилей на сервер ─────────────────
-        postFullTestResults(profileResults)
 
         // 5. Отправка лога (VPN выключен → нет loop-проблемы) ─────────
         w.appendLine("\n")
