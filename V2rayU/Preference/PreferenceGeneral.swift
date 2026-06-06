@@ -51,26 +51,29 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         // so frame can be zero even after layoutSubtreeIfNeeded().
         let nibW:  CGFloat = 700
         let nibH:  CGFloat = 360
-        let addH:  CGFloat = 120   // extended: +row for autoConnect + checkin button
+        // addH: 30 for standalone auto-connect row + 100 for limmBox (checkin + buttons)
+        let addH:  CGFloat = 148
         view.frame.size.height = nibH + addH
         preferredContentSize   = NSSize(width: nibW, height: nibH + addH)
 
         // Always use Global mode — no selector needed
         UserDefaults.set(forKey: .runMode, value: RunMode.global.rawValue)
 
-        // ── Box container ────────────────────────────────────────
+        // ── Auto-connect toggle — standalone row, same level as NIB checkboxes above ──
+        // Placed directly on view (not inside limmBox) so it groups visually with
+        // Launch at Login / Check for Updates / etc.
+        autoConnectCheckbox = NSButton(checkboxWithTitle: "Auto-connect on launch",
+                                       target: self, action: #selector(autoConnectToggled(_:)))
+        autoConnectCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        autoConnectCheckbox.state = UserDefaults.standard.bool(forKey: LimmConfig.autoConnectKey) ? .on : .off
+        view.addSubview(autoConnectCheckbox)
+
+        // ── Box container (below auto-connect) ───────────────────
         limmBox = NSBox()
         limmBox.title         = "limm VPN Agent"
         limmBox.titlePosition = .atTop
         limmBox.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(limmBox)
-
-        // ── Auto-connect toggle (first row — directly below NIB "Check for updates") ──
-        autoConnectCheckbox = NSButton(checkboxWithTitle: "Auto-connect on launch",
-                                       target: self, action: #selector(autoConnectToggled(_:)))
-        autoConnectCheckbox.translatesAutoresizingMaskIntoConstraints = false
-        autoConnectCheckbox.state = UserDefaults.standard.bool(forKey: LimmConfig.autoConnectKey) ? .on : .off
-        limmBox.addSubview(autoConnectCheckbox)
 
         // ── Checkin toggle ───────────────────────────────────────
         checkinCheckbox = NSButton(checkboxWithTitle: "Send diagnostics to limm.space every 15 min",
@@ -94,24 +97,28 @@ final class PreferenceGeneralViewController: NSViewController, SettingsPane {
         limmBox.addSubview(checkinButton)
 
         // ── Constraints ──────────────────────────────────────────
+        // NIB checkboxes are at the TOP of the view (y grows downward with topAnchor).
+        // autoConnect sits just below the last NIB row, then limmBox follows.
         let col1: CGFloat = 16
+        // Match NIB checkbox leading indent (~40pt from left edge of 700pt view)
+        let nibLeading: CGFloat = 40
 
         NSLayoutConstraint.activate([
-            // limmBox below NIB content
-            limmBox.topAnchor.constraint(equalTo: view.topAnchor, constant: nibH + 8),
+            // Auto-connect: immediately below NIB content, aligned with NIB checkboxes
+            autoConnectCheckbox.topAnchor.constraint(equalTo: view.topAnchor, constant: nibH + 8),
+            autoConnectCheckbox.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: nibLeading),
+
+            // limmBox: below auto-connect row
+            limmBox.topAnchor.constraint(equalTo: autoConnectCheckbox.bottomAnchor, constant: 12),
             limmBox.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             limmBox.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             limmBox.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8),
 
-            // Row 1: Auto-connect (first — closest to NIB "Check for updates" above)
-            autoConnectCheckbox.topAnchor.constraint(equalTo: limmBox.topAnchor, constant: 20),
-            autoConnectCheckbox.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
-
-            // Row 2: Diagnostics checkin toggle
-            checkinCheckbox.topAnchor.constraint(equalTo: autoConnectCheckbox.bottomAnchor, constant: 8),
+            // Row 1: Diagnostics checkin toggle
+            checkinCheckbox.topAnchor.constraint(equalTo: limmBox.topAnchor, constant: 20),
             checkinCheckbox.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
 
-            // Row 3: Buttons (side by side)
+            // Row 2: Buttons (side by side)
             sendLogButton.topAnchor.constraint(equalTo: checkinCheckbox.bottomAnchor, constant: 12),
             sendLogButton.leadingAnchor.constraint(equalTo: limmBox.leadingAnchor, constant: col1),
             sendLogButton.bottomAnchor.constraint(equalTo: limmBox.bottomAnchor, constant: -16),

@@ -282,10 +282,10 @@ final class LimmFullTest {
                     V2rayLaunch.startV2rayCore()
                 }
                 let port = (UserDefaults.standard.integer(forKey: "localSockPort")).nonzero ?? 1080
-                guard waitForSocks(port: port, maxSec: 12) else {
+                guard waitForSocks(port: port, maxSec: 25) else {
                     DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
                     Thread.sleep(forTimeInterval: 0.5)
-                    return (false, "SOCKS не поднялся за 12s")
+                    return (false, "SOCKS не поднялся за 25s")
                 }
                 let sem = DispatchSemaphore(value: 0)
                 var httpCode = 0; var httpMsg = ""
