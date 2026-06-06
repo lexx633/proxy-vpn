@@ -67,11 +67,16 @@ class LimmCheckin {
     // MARK: - Probes
 
     /// Run curl and return (http_code_string, body). Returns ("000","") on failure.
+    /// Uses both --max-time AND --connect-timeout to guarantee curl exits.
+    /// --max-time alone sometimes doesn't interrupt an SSL handshake hang;
+    /// --connect-timeout caps the TCP+TLS phase independently.
     private func curl(_ args: [String], timeout: Int = 10) -> (String, String) {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-        // append http_code after body separated by newline
-        var fullArgs = ["--max-time", "\(timeout)", "-s", "-L",
+        let connectTimeout = max(timeout - 2, 3)   // connect phase ≤ (timeout-2)s
+        var fullArgs = ["--max-time", "\(timeout)",
+                        "--connect-timeout", "\(connectTimeout)",
+                        "-s", "-L",
                         "-A", "Mozilla/5.0 (limm-probe)",
                         "-w", "\n%{http_code}"] + args
         proc.arguments = fullArgs
