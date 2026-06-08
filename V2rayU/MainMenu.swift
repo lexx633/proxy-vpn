@@ -275,8 +275,12 @@ class MenuController: NSObject, NSMenuDelegate {
 
     @IBAction func switchServer(_ sender: NSMenuItem) {
         guard let obj = sender.representedObject as? V2rayItem else { return }
+        // Manual pick must exit Auto mode — otherwise the auto-switch timer keeps
+        // the checkmark on "Auto" and overwrites the choice on its next tick.
+        if LimmAutoSwitch.shared.isEnabled { LimmAutoSwitch.shared.disable() }
         UserDefaults.set(forKey: .v2rayCurrentServerName, value: obj.name)
         V2rayLaunch.restartV2ray()
+        showServers()   // refresh checkmarks: Auto off, picked server on
     }
 
     @IBAction func switchRouting(_ sender: NSMenuItem) {
