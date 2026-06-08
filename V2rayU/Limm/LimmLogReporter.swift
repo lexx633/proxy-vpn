@@ -144,38 +144,49 @@ class LimmLogReporter {
         let versionLine = lines.reversed().first { $0.contains("Xray") && $0.contains("Penetrates Everything") } ?? ""
         let startedLine = lines.reversed().first { $0.contains("[Warning] core: Xray") && $0.contains("started") } ?? ""
         let header = [versionLine, startedLine].filter { !$0.isEmpty }.joined(separator: "\n")
-        let tail = lines.suffix(200).joined(separator: "\n")
+        let tail = lines.suffix(120).joined(separator: "\n")
         return header.isEmpty ? tail : "=== Xray version ===\n\(header)\n=== Log (last 200 lines) ===\n\(tail)"
     }
 
     // MARK: - Upload
 
     private func upload(bundle: [String: Any], completion: @escaping (Bool, String) -> Void) {
-        guard let url = URL(string: "\(LimmConfig.apiBase)/applog") else {
-            completion(false, "bad url"); return
-        }
         guard let body = try? JSONSerialization.data(withJSONObject: bundle) else {
             completion(false, "json error"); return
         }
 
-        var req = URLRequest(url: url)
-        req.httpMethod  = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer \(LimmConfig.token)", forHTTPHeaderField: "Authorization")
-        req.httpBody    = body
-        req.timeoutInterval = 20
+        // The diagnostic log MUST arrive precisely when the tunnel is broken. URLSession
+        // with an empty connectionProxyDictionary does NOT reliably bypass the macOS system
+        // SOCKS proxy that V2rayU sets, so the (large) upload rode the flaky tunnel and died
+        // with "network connection was lost"/"request timed out". curl --noproxy '*' guarantees
+        // a direct egress, matching every other probe in this codebase.
+        let tmp = NSTemporaryDirectory() + "limm_applog_\(UUID().uuidString).json"
+        do { try body.write(to: URL(fileURLWithPath: tmp)) }
+        catch { completion(false, "tmp write: \(error.localizedDescription)"); return }
+        defer { try? FileManager.default.removeItem(atPath: tmp) }
 
-        // Use ephemeral session with no proxy — avoids "network connection was lost"
-        // when VPN is stopped but system proxy (127.0.0.1:1080) is still configured.
-        let cfg = URLSessionConfiguration.ephemeral
-        cfg.connectionProxyDictionary = [:]
-        cfg.timeoutIntervalForRequest = 20
-        URLSession(configuration: cfg).dataTask(with: req) { data, resp, err in
-            if let err = err { completion(false, err.localizedDescription); return }
-            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            let msg  = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-            completion(code == 200, "\(code) \(msg.prefix(80))")
-        }.resume()
+        func post() -> (Int, String) {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+            p.arguments = ["--max-time", "30", "--connect-timeout", "10",
+                           "-s", "--noproxy", "*",
+                           "-X", "POST",
+                           "-H", "Content-Type: application/json",
+                           "-H", "Authorization: Bearer \(LimmConfig.token)",
+                           "--data-binary", "@\(tmp)",
+                           "-w", "\n%{http_code}",
+                           "\(LimmConfig.apiBase)/applog"]
+            let out = Pipe(); p.standardOutput = out; p.standardError = Pipe()
+            do { try p.run(); p.waitUntilExit() } catch { return (0, "curl spawn failed") }
+            let raw = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            guard let nl = raw.lastIndex(of: "\n") else { return (0, raw) }
+            let code = Int(raw[raw.index(after: nl)...].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+            return (code, String(raw[..<nl]).prefix(80).description)
+        }
+
+        var (code, msg) = post()
+        if code != 200 { (code, msg) = post() }   // one retry — RU uplink to CF is flaky
+        completion(code == 200, "\(code) \(msg)")
     }
 }
 
