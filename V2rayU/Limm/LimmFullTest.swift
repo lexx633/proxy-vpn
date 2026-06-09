@@ -357,35 +357,47 @@ final class LimmFullTest {
 
     // MARK: - IP probe through SOCKS
 
+    /// XHTTP может вернуть пустой ответ на первый запрос (~15s timeout) — делаем до 3 попыток.
+    private let egressRetryMax = 3
+
     private func testEgressIP() -> (Bool, String) {
         let port = UserDefaults.standard.integer(forKey: "localSockPort")
         let socksPort = port > 0 ? port : 1080
 
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-        // 20s: XHTTP may need one retry (~10-15s) before first successful response.
-        proc.arguments = [
-            "--max-time", "20", "-s",
-            "--socks5", "127.0.0.1:\(socksPort)",
-            "https://api.ipify.org",
-        ]
-        let outPipe = Pipe()
-        proc.standardOutput = outPipe
-        proc.standardError  = Pipe()
+        for attempt in 1...egressRetryMax {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+            // 20s per attempt: XHTTP may delay first response up to ~15s.
+            proc.arguments = [
+                "--max-time", "20", "-s",
+                "--socks5", "127.0.0.1:\(socksPort)",
+                "https://api.ipify.org",
+            ]
+            let outPipe = Pipe()
+            proc.standardOutput = outPipe
+            proc.standardError  = Pipe()
 
-        do {
-            try proc.run()
-            proc.waitUntilExit()
-            let raw  = outPipe.fileHandleForReading.readDataToEndOfFile()
-            let ip   = (String(data: raw, encoding: .utf8) ?? "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !ip.isEmpty else { return (false, "нет ответа от api.ipify.org") }
-            let isVPN = (ip == LimmConfig.serverIP)
-            let tag   = isVPN ? "= VPN ✓" : "= клиент IP ✗"
-            return (isVPN, "\(ip)  \(tag)")
-        } catch {
-            return (false, error.localizedDescription)
+            do {
+                try proc.run()
+                proc.waitUntilExit()
+                let raw = outPipe.fileHandleForReading.readDataToEndOfFile()
+                let ip  = (String(data: raw, encoding: .utf8) ?? "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !ip.isEmpty {
+                    let isVPN = (ip == LimmConfig.serverIP)
+                    let tag   = isVPN ? "= VPN ✓" : "= клиент IP ✗"
+                    return (isVPN, "\(ip)  \(tag)")
+                }
+            } catch {
+                return (false, error.localizedDescription)
+            }
+
+            if attempt < egressRetryMax {
+                NSLog("[Limm] testEgressIP: attempt %d/%d empty, retrying", attempt, egressRetryMax)
+                Thread.sleep(forTimeInterval: 0.5)
+            }
         }
+        return (false, "нет ответа от api.ipify.org (\(egressRetryMax) попытки)")
     }
 
     // MARK: - Helpers
