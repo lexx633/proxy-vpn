@@ -335,9 +335,13 @@ class LimmCheckin {
 
         // Bypass system proxy: in Global mode all traffic goes through SOCKS;
         // if Xray restarts mid-checkin the proxy is briefly down and the request fails.
+        // P-H1: capture session in closure and call finishTasksAndInvalidate() on completion
+        // to release the connection pool — avoids accumulating idle sessions over 15-min cycles.
         let directConfig = URLSessionConfiguration.ephemeral
         directConfig.connectionProxyDictionary = [:]
-        let task = URLSession(configuration: directConfig).dataTask(with: req) { data, resp, err in
+        let session = URLSession(configuration: directConfig)
+        let task = session.dataTask(with: req) { data, resp, err in
+            defer { session.finishTasksAndInvalidate() }
             if let err = err {
                 NSLog("[Limm] checkin error: %@", err.localizedDescription)
                 completion?(0, err.localizedDescription)

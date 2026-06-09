@@ -183,7 +183,14 @@ final class LimmFullTest {
         req.timeoutInterval = 20
         let cfg = URLSessionConfiguration.ephemeral
         cfg.connectionProxyDictionary = [:]
-        URLSession(configuration: cfg).dataTask(with: req) { _, _, _ in }.resume()
+        // P-H2: capture session to call finishTasksAndInvalidate(); log non-200 for observability.
+        let session = URLSession(configuration: cfg)
+        session.dataTask(with: req) { _, resp, err in
+            defer { session.finishTasksAndInvalidate() }
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            if let err = err { NSLog("[Limm] postFullTestResults error: %@", err.localizedDescription) }
+            else if code != 200 { NSLog("[Limm] postFullTestResults: server returned %d", code) }
+        }.resume()
     }
 
     // MARK: - Execution
@@ -405,7 +412,10 @@ final class LimmFullTest {
         p.arguments = ["--max-time", "1", "-s", "-o", "/dev/null",
                        "--connect-timeout", "1", "http://127.0.0.1:\(port)"]
         p.standardOutput = Pipe(); p.standardError = Pipe()
-        try? p.run(); p.waitUntilExit()
+        // P-M1: explicit do/catch — if curl fails to launch, terminationStatus defaults to 0
+        // which is in the success set {0,52,56} and would falsely report SOCKS as open.
+        do { try p.run() } catch { return false }
+        p.waitUntilExit()
         let c = Int(p.terminationStatus)
         return c == 0 || c == 52 || c == 56
     }

@@ -122,7 +122,7 @@ class LimmAutoSwitch {
         DispatchQueue.main.async {
             UserDefaults.set(forKey: .v2rayCurrentServerName, value: name)
             V2rayLaunch.restartV2ray()
-            menuController.showServers()
+            menuController?.showServers()  // P-L1: optional chain — guard against nil before menu is ready
         }
     }
 
@@ -187,6 +187,7 @@ func tcpConnectLatency(host: String, port: Int) -> Int {
     let t0     = Date()
 
     Thread.detachNewThread {
+        Thread.current.name = "limm-tcp-probe"  // P-L2: named thread for profiler/crashlog
         if connect(sockfd, info.pointee.ai_addr, info.pointee.ai_addrlen) == 0 {
             result = Int(Date().timeIntervalSince(t0) * 1000)
         }

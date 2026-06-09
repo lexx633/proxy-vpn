@@ -32,8 +32,16 @@ class LimmUpdater {
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.timeoutInterval = 15
 
-        URLSession.shared.dataTask(with: req) { data, resp, err in
+        // P-M2: use ephemeral direct session (bypass system SOCKS proxy set by V2rayU);
+        // check statusCode == 200 before decode — 404/500 HTML bodies crash JSONDecoder silently.
+        // Capture session in closure for finishTasksAndInvalidate() after completion.
+        let directCfg = URLSessionConfiguration.ephemeral
+        directCfg.connectionProxyDictionary = [:]
+        let session = URLSession(configuration: directCfg)
+        session.dataTask(with: req) { data, resp, err in
+            defer { session.finishTasksAndInvalidate() }
             guard let data = data,
+                  (resp as? HTTPURLResponse)?.statusCode == 200,
                   let release = try? JSONDecoder().decode(LimmRelease.self, from: data)
             else {
                 if !silent { self.showError("Не удалось проверить обновления") }
