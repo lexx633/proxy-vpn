@@ -200,6 +200,17 @@ class LimmCheckin {
     ///   SOCKS probes (L2–L4 + service checks) are skipped and checkin finishes in ~10s
     ///   instead of waiting up to 65s for curl timeouts on an unavailable SOCKS port.
     func perform(overrideVpnOn: Bool? = nil, checkinCompletion: ((Int, String) -> Void)? = nil) {
+        // ─── AmneziaWG (TUN, no SOCKS) special-case — closes TZ §0.3 ───
+        // When the active transport is FR1-awg there is NO local SOCKS proxy (:1087 is
+        // empty). Probing through SOCKS would falsely report L2/L3=0 and bounce the
+        // autoswitch off a working AWG tunnel. Instead, probe egress DIRECTLY: with the
+        // utun up, all traffic is already tunnelled, so the egress IP equals the server IP.
+        let curServer = UserDefaults.get(forKey: .v2rayCurrentServerName) ?? ""
+        if curServer == LimmAutoSwitch.awgTransportName && LimmAWGProcess.shared.isRunning {
+            performAWG(checkinCompletion: checkinCompletion)
+            return
+        }
+
         let token   = LimmConfig.token
         let uid     = LimmConfig.clientUID()
         let socksPort = UserDefaults.standard.integer(forKey: "localSockPort")
@@ -331,6 +342,73 @@ class LimmCheckin {
         }
 
         postCheckin(payload: payload, token: token, completion: checkinCompletion)
+    }
+
+    // MARK: - AmneziaWG checkin (direct probes, no SOCKS — closes TZ §0.3 §B.5)
+
+    /// Diagnostic cycle while the AWG (utun) transport is active. There is no SOCKS proxy,
+    /// so egress is measured DIRECTLY: with the tunnel up, all traffic is routed through
+    /// utun and the public egress IP equals the server IP.
+    /// L3 (tunnel) source of truth for AWG = (direct egress IP == server IP).
+    private func performAWG(checkinCompletion: ((Int, String) -> Void)? = nil) {
+        let uid = LimmConfig.clientUID()
+
+        // L0 — local internet (this still reaches out; with full-tunnel routing it goes via utun,
+        // which is fine — if utun is down we'd get 0 here too). Kept for parity with the dashboard.
+        let l0 = curlDirect("http://1.1.1.1", timeout: 5)
+
+        // Egress IP via direct curl (NO --socks5). Routed through utun when AWG is up.
+        let (ipCode, ipBody) = curlNoProxy("https://api.ipify.org", timeout: 12)
+        let egressIP = ipBody.trimmingCharacters(in: .whitespacesAndNewlines)
+        let egressOK = (ipCode == "200" && egressIP == LimmConfig.serverIP)
+        let l = egressOK ? 1 : 0   // L1/L2/L3/L4 all collapse to "is the tunnel carrying us out via the server"
+
+        NSLog("[Limm] AWG checkin egress=%@ ok=%d", egressIP, egressOK ? 1 : 0)
+
+        let raw: [String: Any] = [
+            "dest_google":   egressOK ? "ok" : "down",
+            "dest_telegram": egressOK ? "ok" : "down",
+            "services":      ["tg": egressOK ? "ok" : "down",
+                              "ggl": egressOK ? "ok" : "down",
+                              "chgpt": egressOK ? "ok" : "down"],
+            "egress_ip":     egressIP,
+            "transport":     "awg",
+        ]
+        let payload: [String: Any] = [
+            "client_uid":  uid,
+            "kind":        LimmConfig.clientKind,
+            "label":       LimmConfig.clientLabel,
+            "app_version": LimmConfig.appVersion,
+            "l0_local_net": l0, "l1_tcp443": l, "l2_handshake": l, "l3_tunnel": l, "l4_dest": l,
+            "vpn_running": 1,
+            "raw": raw,
+        ]
+
+        // Update L3 source of truth for LimmAutoSwitch (only the direct-egress verdict).
+        LimmCheckin.lastL3ok   = egressOK
+        LimmCheckin.lastL3date = Date()
+
+        postCheckin(payload: payload, token: LimmConfig.token, completion: checkinCompletion)
+    }
+
+    /// Direct curl bypassing system proxy, returning (http_code, body). Used for AWG egress
+    /// probe where traffic must ride the utun, not a SOCKS proxy.
+    private func curlNoProxy(_ url: String, timeout: Int = 12) -> (String, String) {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+        proc.arguments = ["--max-time", "\(timeout)",
+                          "--connect-timeout", "\(max(timeout - 2, 3))",
+                          "-s", "--noproxy", "*",
+                          "-A", "Mozilla/5.0 (limm-probe)",
+                          "-w", "\n%{http_code}", url]
+        let out = Pipe(); proc.standardOutput = out; proc.standardError = Pipe()
+        do { try proc.run(); proc.waitUntilExit() } catch { return ("000", "") }
+        let raw = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        if let nl = raw.lastIndex(of: "\n") {
+            let code = String(raw[raw.index(after: nl)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            return (code.isEmpty ? "000" : code, String(raw[..<nl]))
+        }
+        return ("000", raw)
     }
 
     private func postCheckin(payload: [String: Any], token: String, completion: ((Int, String) -> Void)? = nil) {

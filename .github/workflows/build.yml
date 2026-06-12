@@ -54,13 +54,57 @@ jobs:
         env:
           COCOAPODS_DISABLE_STATS: true
 
-      # ── Inject Limm token (build-time secret) ─────────────────
+      # ── Inject Limm secrets (build-time) ──────────────────────
+      # Bakes the monitor token AND the AmneziaWG client private key from GitHub secrets.
+      # secrets.AWG_CLIENT_PRIVKEY must be added in repo Settings → Secrets (base64 wg privkey).
       - name: Generate LimmSecrets.swift
         run: |
-          sed "s/__LIMM_TOKEN__/${{ secrets.LIMM_MONITOR_TOKEN }}/" \
+          sed -e "s|__LIMM_TOKEN__|${{ secrets.LIMM_MONITOR_TOKEN }}|" \
+              -e "s|__AWG_CLIENT_PRIVKEY__|${{ secrets.AWG_CLIENT_PRIVKEY }}|" \
             V2rayU/Limm/LimmSecrets.swift.template \
             > V2rayU/Limm/LimmSecrets.swift
-          echo "LimmSecrets.swift generated."
+          echo "LimmSecrets.swift generated (token + AWG key injected)."
+
+      # ── Download & bundle amneziawg-go (userspace AmneziaWG TUN) ──
+      # The "FR1-awg" transport (LimmAWGProcess.swift) launches this binary. It is NOT in
+      # the repo. Bundle a universal (arm64 + x86_64) build plus the `awg` config tool into
+      # Build/awg-core/, which is added to the app as a Resources folder reference (see the
+      # "Add awg-core to xcodeproj" step). Lands at Contents/Resources/awg-core/amneziawg-go.
+      #
+      # NOTE: amnezia-vpn/amneziawg-go publishes SOURCE, not prebuilt macOS binaries. CI must
+      # build it from source (Go) and lipo the two arches into a universal binary. The `awg`
+      # wg(8)-compatible tool comes from amnezia-vpn/amneziawg-tools (also built from source).
+      # TODO(verify): confirm the exact release/tag and that amneziawg-go builds cleanly on
+      # the macos-14 runner; pin a known-good commit once verified.
+      - name: Build & bundle amneziawg-go + awg tools
+        run: |
+          set -e
+          mkdir -p Build/awg-core
+          # Go is preinstalled on GitHub macOS runners.
+          go version
+          WORK=$(mktemp -d)
+          # amneziawg-go (userspace device)
+          git clone --depth 1 https://github.com/amnezia-vpn/amneziawg-go "$WORK/awg-go"
+          ( cd "$WORK/awg-go"
+            GOOS=darwin GOARCH=arm64 go build -o "$WORK/amneziawg-go-arm64" .
+            GOOS=darwin GOARCH=amd64 go build -o "$WORK/amneziawg-go-amd64" . )
+          lipo -create -output Build/awg-core/amneziawg-go \
+            "$WORK/amneziawg-go-arm64" "$WORK/amneziawg-go-amd64"
+          chmod +x Build/awg-core/amneziawg-go
+          # awg / awg-quick config tool (wg(8)-compatible)
+          git clone --depth 1 https://github.com/amnezia-vpn/amneziawg-tools "$WORK/awg-tools"
+          # amneziawg-tools ships the userspace `wg`-equivalent under src/ (C). Build it.
+          # TODO(verify): exact build target/path; some releases ship a prebuilt `awg`.
+          if make -C "$WORK/awg-tools/src" 2>/dev/null; then
+            lipo -info "$WORK/awg-tools/src/wg" 2>/dev/null || true
+            cp "$WORK/awg-tools/src/wg" Build/awg-core/awg || cp "$WORK/awg-tools/src/awg" Build/awg-core/awg
+            chmod +x Build/awg-core/awg
+          else
+            echo "::warning::awg config tool build failed — AWG will create utun but not configure. Verify amneziawg-tools build."
+          fi
+          rm -rf "$WORK"
+          ls -la Build/awg-core/
+          file Build/awg-core/amneziawg-go
 
       # ── Inject build version + commit hash ───────────────────
       - name: Generate LimmBuildInfo.swift
@@ -75,6 +119,10 @@ jobs:
       # ── Add Limm Swift files to Xcode project ─────────────────
       - name: Add Limm files to xcodeproj
         run: ruby scripts/add_limm_files.rb
+
+      # ── Bundle amneziawg-go binary as a Resources folder ──────
+      - name: Add awg-core to xcodeproj
+        run: ruby scripts/add_awg_resource.rb
 
       # ── Build ──────────────────────────────────────────────────
       - name: Build V2rayU.app

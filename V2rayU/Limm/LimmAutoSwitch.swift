@@ -22,7 +22,9 @@ class LimmAutoSwitch {
 
     /// Ordered list of known transport server names.
     /// Index 0 = preferred; failover goes 0→1→2→3→0 (cyclically).
-    let transportLadder: [String] = ["FR1-xhttp", "FR1-cf", "FR1-hy2", "FR1-wg", "FR1"]
+    /// AmneziaWG ("FR1-awg") is NOT an xray profile — it's a userspace TUN driven by
+    /// LimmAWGProcess. doSwitch() branches on this name. See docs/TZ-amneziawg-clients.md §B.
+    let transportLadder: [String] = ["FR1-xhttp", "FR1-cf", "FR1-hy2", "FR1-awg", "FR1-wg", "FR1"]
 
     // MARK: - Settings from UserDefaults
 
@@ -114,12 +116,59 @@ class LimmAutoSwitch {
         doSwitch(to: nextName)
     }
 
+    /// AWG transport name. When this is the target/current transport we drive
+    /// LimmAWGProcess (userspace TUN) instead of launching an xray profile.
+    static let awgTransportName = "FR1-awg"
+
     private func doSwitch(to name: String) {
         lastSwitchDate = Date()
+        let leavingAWG = (UserDefaults.get(forKey: .v2rayCurrentServerName) ?? "") == LimmAutoSwitch.awgTransportName
         DispatchQueue.main.async {
             UserDefaults.set(forKey: .v2rayCurrentServerName, value: name)
+
+            if name == LimmAutoSwitch.awgTransportName {
+                // → switching TO AmneziaWG: stop xray (frees SOCKS :1087), bring up AWG TUN.
+                NSLog("[AutoSwitch] entering AWG transport")
+                V2rayLaunch.stopV2rayCore()
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let ok = LimmAWGProcess.shared.start()
+                    NSLog("[AutoSwitch] AWG start → %@", ok ? "ok" : "FAILED")
+                    DispatchQueue.main.async { menuController.showServers() }
+                }
+                LimmAutoSwitch.sendSwitchEvent(to: name)
+                return
+            }
+
+            // → switching TO an xray transport.
+            if leavingAWG || LimmAWGProcess.shared.isRunning {
+                // Leaving AWG: tear down the TUN before starting xray.
+                NSLog("[AutoSwitch] leaving AWG transport")
+                LimmAWGProcess.shared.stop()
+            }
             V2rayLaunch.restartV2ray()
             menuController.showServers()
+            LimmAutoSwitch.sendSwitchEvent(to: name)
         }
+    }
+
+    /// Notify the monitoring collector that a transport switch happened (dashboard event).
+    private static func sendSwitchEvent(to name: String) {
+        guard let url = URL(string: "\(LimmConfig.apiBase)/event") else { return }
+        let payload: [String: Any] = [
+            "client_uid": LimmConfig.clientUID(),
+            "event_type": "transport_switch",
+            "note":       "macos → \(name)",
+        ]
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(LimmConfig.token)", forHTTPHeaderField: "Authorization")
+        req.httpBody = body
+        req.timeoutInterval = 15
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.connectionProxyDictionary = [:]
+        let session = URLSession(configuration: cfg)
+        session.dataTask(with: req) { _, _, _ in session.finishTasksAndInvalidate() }.resume()
     }
 }

@@ -185,6 +185,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         MASShortcutMonitor.shared().unregisterAllShortcuts()
         LimmCheckin.shared.stop()
+        LimmAWGProcess.shared.stop()   // tear down AmneziaWG utun + routes if active
         V2rayLaunch.Stop()
         V2rayLaunch.setSystemProxy(mode: .off)
         killSelfV2ray()
