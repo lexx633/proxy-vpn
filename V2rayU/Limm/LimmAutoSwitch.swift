@@ -122,7 +122,7 @@ class LimmAutoSwitch {
         DispatchQueue.main.async {
             UserDefaults.set(forKey: .v2rayCurrentServerName, value: name)
             V2rayLaunch.restartV2ray()
-            menuController?.showServers()  // P-L1: optional chain — guard against nil before menu is ready
+            menuController.showServers()
         }
     }
 
