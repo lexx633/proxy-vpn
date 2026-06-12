@@ -481,7 +481,6 @@ class ImportUri {
             isValid = false
         }
     }
-}
 
     func importHysteria2Uri(uri: String) {
         // hysteria2:// URL may contain non-ASCII fragment — split manually
