@@ -94,7 +94,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // limm: checkin every 15 min
         LimmCheckin.shared.start()
-        // limm: auto-switch to fastest server (resumes if was enabled)
+        // limm: transport-ladder failover (default on; register before start() reads the pref)
+        LimmAutoSwitch.registerDefaults()
         LimmAutoSwitch.shared.start()
 
         // limm: auto check updates — only if enabled AND >30 days since last check.

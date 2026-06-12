@@ -9,6 +9,13 @@ class LimmCheckin {
     static let shared = LimmCheckin()
     private var timer: Timer?
 
+    // MARK: - Last L3 result (used by LimmAutoSwitch)
+
+    /// True if the last completed checkin measured L3 (tunnel) = 1.
+    /// Set by perform() after every full diagnostic cycle.
+    static private(set) var lastL3ok:   Bool  = true
+    static private(set) var lastL3date: Date? = nil
+
     // MARK: - Lifecycle
 
     func start() {
@@ -314,6 +321,14 @@ class LimmCheckin {
 
         NSLog("[Limm] l0=%d l1=%d l2=%d l3=%d l4=%d vpn=%d tg=%@ ggl=%@ chgpt=%@",
               l0, l1, l2, l3, l4, vpnOn ? 1 : 0, tgStatus, gglStatus, chgptStatus)
+
+        // Update last L3 result for LimmAutoSwitch ladder logic.
+        // Only update when VPN was on — if VPN is off, l3=0 by definition and
+        // we don't want that to trigger a transport switch.
+        if vpnOn {
+            LimmCheckin.lastL3ok   = (l3 == 1)
+            LimmCheckin.lastL3date = Date()
+        }
 
         postCheckin(payload: payload, token: token, completion: checkinCompletion)
     }

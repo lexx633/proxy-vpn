@@ -1,13 +1,13 @@
-// LimmAutoSwitch.swift — auto-select fastest server with configurable hysteresis
+// LimmAutoSwitch.swift — transport-ladder failover
 //
 // Algorithm (per tick, every 60 s):
-//   1. Probe each server 3× concurrently → take arithmetic mean latency
-//   2. Compare current server mean vs best alternative mean
-//   3. Switch only if: (current_avg - best_avg) > switchGapMs
-//      AND at least switchCooldownMin minutes have passed since the last switch
+//   1. Get current server name.
+//   2. If it's not in transportLadder → do nothing (user's custom server, don't touch).
+//   3. Read last L3 result from LimmCheckin.lastL3ok.
+//   4. If L3=true → tunnel works, stay put.
+//   5. If L3=false AND cooldown elapsed → advance to next transport in ladder (cyclically).
 //
-// This prevents flapping: small fluctuations (±20 ms) don't trigger a switch;
-// only a sustained lag spike that exceeds the gap triggers a move.
+// No ping probes. No flapping. Source of truth = last checkin L3 result.
 
 import Foundation
 
@@ -18,16 +18,17 @@ class LimmAutoSwitch {
     private var lastSwitchDate: Date? = nil
     private init() {}
 
+    // MARK: - Transport ladder (priority order)
+
+    /// Ordered list of known transport server names.
+    /// Index 0 = preferred; failover goes 0→1→2→3→0 (cyclically).
+    let transportLadder: [String] = ["FR1-xhttp", "FR1-cf", "FR1-hy2", "FR1"]
+
     // MARK: - Settings from UserDefaults
 
     var isEnabled: Bool {
         get { UserDefaults.standard.bool(forKey: LimmConfig.autoServerKey) }
         set { UserDefaults.standard.set(newValue, forKey: LimmConfig.autoServerKey) }
-    }
-
-    /// Gap in ms: switch only when current_avg − best_avg > switchGapMs.
-    var switchGapMs: Int {
-        Int(UserDefaults.standard.string(forKey: LimmConfig.switchGapKey) ?? "50") ?? 50
     }
 
     /// Cooldown in minutes: minimum time between two switches.
@@ -39,6 +40,11 @@ class LimmAutoSwitch {
 
     func enable() { isEnabled = true; start() }
     func disable() { isEnabled = false; stop() }
+
+    /// Register default: autoswitch ON unless user explicitly disabled it.
+    static func registerDefaults() {
+        UserDefaults.standard.register(defaults: [LimmConfig.autoServerKey: true])
+    }
 
     /// Starts the 60-second timer. Call on app launch and on wake-from-sleep.
     func start() {
@@ -59,62 +65,53 @@ class LimmAutoSwitch {
     }
 
     private func evaluateAndSwitch() {
-        // Cooldown guard
+        let curName = UserDefaults.get(forKey: .v2rayCurrentServerName) ?? ""
+
+        // If current server is not in our ladder → user chose a custom profile, leave it alone.
+        guard let curIdx = transportLadder.firstIndex(of: curName) else {
+            NSLog("[AutoSwitch] current server '%@' not in ladder — skipping", curName)
+            return
+        }
+
+        // Read last L3 result written by LimmCheckin.perform()
+        let l3ok    = LimmCheckin.lastL3ok
+        let l3date  = LimmCheckin.lastL3date
+
+        // If we haven't received any checkin data yet, play it safe and don't switch.
+        guard let checkinAge = l3date.map({ Date().timeIntervalSince($0) }) else {
+            NSLog("[AutoSwitch] no checkin data yet — skipping")
+            return
+        }
+
+        // If checkin is stale (>20 min), data may be unreliable — skip.
+        if checkinAge > 20 * 60 {
+            NSLog("[AutoSwitch] last checkin is %.0fs ago (>20min) — skipping", checkinAge)
+            return
+        }
+
+        // Tunnel is working → stay put.
+        if l3ok {
+            NSLog("[AutoSwitch] L3=ok on '%@' — no switch needed", curName)
+            return
+        }
+
+        // Tunnel broken → check cooldown before switching.
         if let last = lastSwitchDate {
             let elapsed = Date().timeIntervalSince(last) / 60   // minutes
             if elapsed < switchCooldownMin {
                 let remaining = Int((switchCooldownMin - elapsed).rounded(.up))
-                NSLog("[AutoSwitch] cooldown: \(remaining) min remaining, skipping")
+                NSLog("[AutoSwitch] L3=fail on '%@' but cooldown: %dmin remaining", curName, remaining)
                 return
             }
         }
 
-        let servers = V2rayServer.all().filter { $0.isValid }
-        guard servers.count > 1 else { return }
+        // Advance to next transport in ladder (cyclically).
+        let nextIdx  = (curIdx + 1) % transportLadder.count
+        let nextName = transportLadder[nextIdx]
 
-        let curName = UserDefaults.get(forKey: .v2rayCurrentServerName) ?? ""
-
-        // Probe each server 3× concurrently, compute mean
-        struct Probe { let name: String; let avgMs: Int }
-        var probes = [Probe]()
-        let outerGroup = DispatchGroup()
-        let lock       = NSLock()
-
-        for item in servers {
-            guard let (host, port) = LimmAutoSwitch.parseAddress(item) else { continue }
-            outerGroup.enter()
-            DispatchQueue.global(qos: .utility).async {
-                let avg = Self.probeAverage(host: host, port: port, count: 3)
-                lock.lock(); probes.append(Probe(name: item.name, avgMs: avg)); lock.unlock()
-                outerGroup.leave()
-            }
-        }
-        outerGroup.wait()
-
-        let valid = probes.filter { $0.avgMs >= 0 }
-        guard valid.count > 1 else { return }
-
-        let gap = switchGapMs
-
-        guard let cur = valid.first(where: { $0.name == curName }) else {
-            // Current server unreachable → pick fastest available
-            if let best = valid.min(by: { $0.avgMs < $1.avgMs }) {
-                NSLog("[AutoSwitch] current unreachable → \(best.name) (\(best.avgMs)ms)")
-                doSwitch(to: best.name)
-            }
-            return
-        }
-
-        let others = valid.filter { $0.name != curName }
-        guard let best = others.min(by: { $0.avgMs < $1.avgMs }) else { return }
-
-        let diff = cur.avgMs - best.avgMs
-        NSLog("[AutoSwitch] cur=\(cur.name) avg=\(cur.avgMs)ms | best=\(best.name) avg=\(best.avgMs)ms | diff=\(diff)ms | gap=\(gap)ms | cooldown=\(Int(switchCooldownMin))min")
-
-        if diff > gap {
-            NSLog("[AutoSwitch] switching → \(best.name)")
-            doSwitch(to: best.name)
-        }
+        NSLog("[AutoSwitch] L3=fail on '%@' → switching to '%@' (ladder %d→%d)",
+              curName, nextName, curIdx, nextIdx)
+        doSwitch(to: nextName)
     }
 
     private func doSwitch(to name: String) {
@@ -125,78 +122,4 @@ class LimmAutoSwitch {
             menuController.showServers()
         }
     }
-
-    // MARK: - Helpers
-
-    /// Probe host:port `count` times concurrently, return arithmetic mean (or -1 if all failed).
-    private static func probeAverage(host: String, port: Int, count: Int) -> Int {
-        var results = [Int]()
-        let group   = DispatchGroup()
-        let lock    = NSLock()
-
-        for _ in 0..<count {
-            group.enter()
-            DispatchQueue.global(qos: .utility).async {
-                let ms = tcpConnectLatency(host: host, port: port)
-                if ms >= 0 { lock.lock(); results.append(ms); lock.unlock() }
-                group.leave()
-            }
-        }
-        group.wait()
-
-        guard !results.isEmpty else { return -1 }
-        return results.reduce(0, +) / results.count
-    }
-
-    /// Extract (host, port) from a V2rayItem using the V2rayConfig parser.
-    static func parseAddress(_ item: V2rayItem) -> (String, Int)? {
-        let cfg = V2rayConfig()
-        cfg.parseJson(jsonText: item.json)
-
-        if !cfg.serverVless.address.isEmpty, cfg.serverVless.port > 0 {
-            return (cfg.serverVless.address, cfg.serverVless.port)
-        }
-        if !cfg.serverVmess.address.isEmpty, cfg.serverVmess.port > 0 {
-            return (cfg.serverVmess.address, cfg.serverVmess.port)
-        }
-        if !cfg.serverTrojan.address.isEmpty, cfg.serverTrojan.port > 0 {
-            return (cfg.serverTrojan.address, cfg.serverTrojan.port)
-        }
-        if !cfg.serverHysteria2.address.isEmpty, cfg.serverHysteria2.port > 0 {
-            return (cfg.serverHysteria2.address, cfg.serverHysteria2.port)
-        }
-        return nil
-    }
-}
-
-// MARK: - TCP latency probe
-
-/// Synchronous TCP connect to host:port. Returns latency in ms, or -1 on failure/timeout.
-/// Always call from a background queue — blocks the calling thread up to ~4 s.
-func tcpConnectLatency(host: String, port: Int) -> Int {
-    var hints = addrinfo()
-    hints.ai_socktype = SOCK_STREAM
-    var addrPtr: UnsafeMutablePointer<addrinfo>?
-    guard getaddrinfo(host, String(port), &hints, &addrPtr) == 0,
-          let info = addrPtr else { return -1 }
-    defer { freeaddrinfo(addrPtr) }
-
-    let sockfd = socket(info.pointee.ai_family, info.pointee.ai_socktype, 0)
-    guard sockfd >= 0 else { return -1 }
-    defer { close(sockfd) }
-
-    let sem    = DispatchSemaphore(value: 0)
-    var result = -1
-    let t0     = Date()
-
-    Thread.detachNewThread {
-        Thread.current.name = "limm-tcp-probe"  // P-L2: named thread for profiler/crashlog
-        if connect(sockfd, info.pointee.ai_addr, info.pointee.ai_addrlen) == 0 {
-            result = Int(Date().timeIntervalSince(t0) * 1000)
-        }
-        sem.signal()
-    }
-
-    _ = sem.wait(timeout: .now() + 4.0)
-    return result
 }
