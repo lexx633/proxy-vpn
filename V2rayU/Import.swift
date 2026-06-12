@@ -48,11 +48,16 @@ class ImportUri {
             importUri.importSSRUri(uri: uri)
             return importUri
         }
+        if uri.hasPrefix("hysteria2://") {
+            let importUri = ImportUri()
+            importUri.importHysteria2Uri(uri: uri)
+            return importUri
+        }
         return nil
     }
 
     static func supportProtocol(uri: String) -> Bool {
-        if uri.hasPrefix("ss://") || uri.hasPrefix("ssr://") || uri.hasPrefix("vmess://") || uri.hasPrefix("vless://") || uri.hasPrefix("trojan://") {
+        if uri.hasPrefix("ss://") || uri.hasPrefix("ssr://") || uri.hasPrefix("vmess://") || uri.hasPrefix("vless://") || uri.hasPrefix("trojan://") || uri.hasPrefix("hysteria2://") {
             return true
         }
         return false
@@ -473,6 +478,65 @@ class ImportUri {
             json = v2ray.combineManual()
         } else {
             error = v2ray.error
+            isValid = false
+        }
+    }
+}
+
+    func importHysteria2Uri(uri: String) {
+        // hysteria2:// URL may contain non-ASCII fragment — split manually
+        var urlStr = uri
+        var fragment = ""
+        if let hashRange = uri.range(of: "#") {
+            fragment = String(uri[hashRange.upperBound...]).urlDecoded()
+            urlStr = String(uri[..<hashRange.lowerBound])
+        }
+
+        guard let url = URL(string: urlStr) else {
+            error = "invalid hysteria2 url"
+            return
+        }
+        self.uri = uri
+
+        let h2 = Hysteria2Uri()
+        h2.Init(url: url)
+        if h2.error.count > 0 {
+            error = h2.error
+            isValid = false
+            return
+        }
+        if !fragment.isEmpty { h2.remark = fragment }
+        if h2.remark.count > 0 { remark = h2.remark }
+
+        importHysteria2(h2: h2)
+    }
+
+    func importHysteria2(h2: Hysteria2Uri) {
+        let v2ray = V2rayConfig()
+        v2ray.serverProtocol = V2rayProtocolOutbound.hysteria2.rawValue
+        v2ray.enableMux = false
+
+        var server = V2rayOutboundHysteria2Server()
+        server.address = h2.host
+        server.port    = h2.port
+        server.password = h2.password
+        server.obfsPassword = h2.obfsPassword.isEmpty ? nil : h2.obfsPassword
+        v2ray.serverHysteria2  = server
+        v2ray.hysteria2Insecure = h2.allowInsecure
+
+        // Hysteria2 uses TCP network + TLS security (xray-core handles QUIC internally)
+        v2ray.streamNetwork  = "tcp"
+        v2ray.streamSecurity = "tls"
+        v2ray.securityTls.serverName   = h2.sni
+        v2ray.securityTls.alpn         = ["h3"]
+        v2ray.securityTls.fingerprint  = "chrome"
+
+        v2ray.checkManualValid()
+        if v2ray.isValid {
+            isValid = true
+            json    = v2ray.combineManual()
+        } else {
+            error   = v2ray.error
             isValid = false
         }
     }

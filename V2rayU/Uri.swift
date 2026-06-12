@@ -892,3 +892,75 @@ class VlessUri {
         }
     }
 }
+
+// MARK: - Hysteria2
+// Format: hysteria2://password@host:port?obfs=salamander&obfs-password=X&sni=Y&insecure=1&mport=A-B#remark
+class Hysteria2Uri {
+    var host: String = ""
+    var port: Int = 20000
+    var password: String = ""
+    var remark: String = ""
+    var sni: String = ""
+    var obfsPassword: String = ""
+    var allowInsecure: Bool = true
+    var error: String = ""
+
+    func Init(url: URL) {
+        guard let host = url.host, !host.isEmpty else {
+            self.error = "error: missing host"
+            return
+        }
+        guard let port = url.port else {
+            self.error = "error: missing port"
+            return
+        }
+        guard let password = url.user, !password.isEmpty else {
+            self.error = "error: missing password"
+            return
+        }
+
+        self.host = host
+        self.port = Int(port)
+        self.password = password.removingPercentEncoding ?? password
+
+        let queryItems = url.queryParams()
+        for item in queryItems {
+            let val = (item.value as? String) ?? ""
+            switch item.key {
+            case "sni":
+                self.sni = val
+            case "obfs-password":
+                self.obfsPassword = val
+            case "insecure", "allowInsecure", "allow_insecure":
+                self.allowInsecure = (val == "1" || val.lowercased() == "true")
+            case "mport", "portHopping":
+                break // port hopping — stored in URI, xray-core handles via addr range if supported
+            default:
+                break
+            }
+        }
+
+        if self.sni.isEmpty { self.sni = host }
+
+        if self.remark.isEmpty {
+            self.remark = (url.fragment ?? "hysteria2").urlDecoded()
+        }
+    }
+
+    func encode() -> String {
+        var components = URLComponents()
+        components.scheme = "hysteria2"
+        components.user = password
+        components.host = host
+        components.port = port
+        var items: [URLQueryItem] = []
+        if !obfsPassword.isEmpty {
+            items.append(URLQueryItem(name: "obfs", value: "salamander"))
+            items.append(URLQueryItem(name: "obfs-password", value: obfsPassword))
+        }
+        if !sni.isEmpty { items.append(URLQueryItem(name: "sni", value: sni)) }
+        items.append(URLQueryItem(name: "insecure", value: allowInsecure ? "1" : "0"))
+        components.queryItems = items
+        return (components.url?.absoluteString ?? "") + "#" + remark
+    }
+}

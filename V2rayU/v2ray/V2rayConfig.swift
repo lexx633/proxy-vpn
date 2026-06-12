@@ -108,6 +108,8 @@ class V2rayConfig: NSObject {
     var serverShadowsocks = V2rayOutboundShadowsockServer()
     var serverVless = V2rayOutboundVLessItem()
     var serverTrojan = V2rayOutboundTrojanServer()
+    var serverHysteria2 = V2rayOutboundHysteria2Server()
+    var hysteria2Insecure: Bool = false
 
     // transfer
     var streamNetwork = V2rayStreamSettings.network.tcp.rawValue
@@ -377,6 +379,22 @@ class V2rayConfig: NSObject {
                 return
             }
             break
+        case V2rayProtocolOutbound.hysteria2.rawValue:
+            if self.serverHysteria2.address.count == 0 {
+                self.error = "missing hysteria2.address"
+                return
+            }
+            if self.serverHysteria2.port == 0 {
+                self.error = "missing hysteria2.port"
+                return
+            }
+            if self.serverHysteria2.password.count == 0 {
+                self.error = "missing hysteria2.password"
+                return
+            }
+            // Hysteria2 uses its own QUIC/TLS stack; no mux
+            self.enableMux = false
+            break
         default:
             self.error = "missing outbound.protocol";
             return
@@ -441,6 +459,14 @@ class V2rayConfig: NSObject {
             mux.enabled = false
             mux.concurrency = self.mux
             outbound.mux = mux
+            break
+
+        case V2rayProtocolOutbound.hysteria2:
+            var hy2 = V2rayOutboundHysteria2()
+            hy2.servers = [self.serverHysteria2]
+            hy2.insecure = self.hysteria2Insecure ? true : nil
+            outbound.settingHysteria2 = hy2
+            outbound.mux = nil
             break
 
         default:
@@ -809,6 +835,23 @@ class V2rayConfig: NSObject {
                 v2rayOutbound.settingTrojan = settingTrojan
 
                 break
+
+            case .hysteria2:
+                var settingHy2 = V2rayOutboundHysteria2()
+                settingHy2.insecure = jsonParams["settings"]["insecure"].bool
+                var hy2Servers: [V2rayOutboundHysteria2Server] = []
+                jsonParams["settings"]["servers"].arrayValue.forEach { val in
+                    var svr = V2rayOutboundHysteria2Server()
+                    svr.address  = val["address"].stringValue
+                    svr.port     = val["port"].intValue
+                    svr.password = val["password"].stringValue
+                    let obfs = val["obfsPassword"].stringValue
+                    svr.obfsPassword = obfs.isEmpty ? nil : obfs
+                    hy2Servers.append(svr)
+                }
+                settingHy2.servers = hy2Servers
+                v2rayOutbound.settingHysteria2 = settingHy2
+                break
             }
         }
 
@@ -841,6 +884,11 @@ class V2rayConfig: NSObject {
 
             if v2rayOutbound.protocol == V2rayProtocolOutbound.trojan && v2rayOutbound.settingTrojan != nil && v2rayOutbound.settingTrojan!.servers.count > 0 {
                 self.serverTrojan = v2rayOutbound.settingTrojan!.servers[0]
+            }
+
+            if v2rayOutbound.protocol == V2rayProtocolOutbound.hysteria2 && v2rayOutbound.settingHysteria2 != nil && v2rayOutbound.settingHysteria2!.servers.count > 0 {
+                self.serverHysteria2   = v2rayOutbound.settingHysteria2!.servers[0]
+                self.hysteria2Insecure = v2rayOutbound.settingHysteria2!.insecure == true
             }
         }
 

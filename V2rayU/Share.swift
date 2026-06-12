@@ -60,6 +60,11 @@ class ShareUri {
             return
         }
 
+        if v2ray.serverProtocol == V2rayProtocolOutbound.hysteria2.rawValue {
+            self.genHysteria2Uri()
+            return
+        }
+
         self.error = "not support"
     }
 
@@ -221,6 +226,18 @@ class ShareUri {
 
         self.uri = ss.encode()
         self.error = ss.error
+    }
+
+    func genHysteria2Uri() {
+        let h2 = Hysteria2Uri()
+        h2.host         = self.v2ray.serverHysteria2.address
+        h2.port         = self.v2ray.serverHysteria2.port
+        h2.password     = self.v2ray.serverHysteria2.password
+        h2.obfsPassword = self.v2ray.serverHysteria2.obfsPassword ?? ""
+        h2.sni          = self.v2ray.securityTls.serverName
+        h2.allowInsecure = self.v2ray.hysteria2Insecure
+        h2.remark       = self.remark
+        self.uri = h2.encode()
     }
 
     func genVlessUri() {

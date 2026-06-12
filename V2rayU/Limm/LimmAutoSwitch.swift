@@ -162,6 +162,9 @@ class LimmAutoSwitch {
         if !cfg.serverTrojan.address.isEmpty, cfg.serverTrojan.port > 0 {
             return (cfg.serverTrojan.address, cfg.serverTrojan.port)
         }
+        if !cfg.serverHysteria2.address.isEmpty, cfg.serverHysteria2.port > 0 {
+            return (cfg.serverHysteria2.address, cfg.serverHysteria2.port)
+        }
         return nil
     }
 }

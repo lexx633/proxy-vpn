@@ -19,6 +19,7 @@ enum V2rayProtocolOutbound: String, Codable {
     case http
     case vless
     case trojan
+    case hysteria2
 }
 
 struct V2rayOutbound: Codable {
@@ -38,6 +39,7 @@ struct V2rayOutbound: Codable {
     var settingHttp: V2rayOutboundHttp?
     var settingVLess: V2rayOutboundVLess?
     var settingTrojan: V2rayOutboundTrojan?
+    var settingHysteria2: V2rayOutboundHysteria2?
 
     enum CodingKeys: String, CodingKey {
         case sendThrough
@@ -106,6 +108,9 @@ extension V2rayOutbound {
         case .trojan:
             settingTrojan = try container.decode(V2rayOutboundTrojan.self, forKey: CodingKeys.settings)
             break
+        case .hysteria2:
+            settingHysteria2 = try container.decode(V2rayOutboundHysteria2.self, forKey: CodingKeys.settings)
+            break
         }
     }
 
@@ -162,6 +167,9 @@ extension V2rayOutbound {
             break
         case .trojan:
             try container.encode(self.settingTrojan, forKey: .settings)
+            break
+        case .hysteria2:
+            try container.encode(self.settingHysteria2, forKey: .settings)
             break
         }
     }
@@ -291,4 +299,37 @@ struct V2rayOutboundTrojanServer: Codable {
     var level: Int = 0
     var email: String = ""
     var flow: String = ""
+}
+
+// MARK: — Hysteria2
+
+struct V2rayOutboundHysteria2: Codable {
+    var servers: [V2rayOutboundHysteria2Server] = []
+    /// Skip TLS certificate verification (self-signed cert).
+    /// Placed here rather than in tlsSettings because xray 26.x removed
+    /// tlsSettings.allowInsecure — but hysteria2 settings still accepts it.
+    var insecure: Bool? = nil
+}
+
+struct V2rayOutboundHysteria2Server: Codable {
+    var address: String = ""
+    var port: Int = 20000
+    var password: String = ""
+    /// Salamander obfuscation password; omit if empty.
+    var obfsPassword: String? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case address, port, password, obfsPassword
+    }
+
+    // Custom encode to skip nil obfsPassword
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(address,  forKey: .address)
+        try c.encode(port,     forKey: .port)
+        try c.encode(password, forKey: .password)
+        if let obfs = obfsPassword, !obfs.isEmpty {
+            try c.encode(obfs, forKey: .obfsPassword)
+        }
+    }
 }
