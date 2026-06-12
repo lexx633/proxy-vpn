@@ -22,7 +22,7 @@ class LimmAutoSwitch {
 
     /// Ordered list of known transport server names.
     /// Index 0 = preferred; failover goes 0→1→2→3→0 (cyclically).
-    let transportLadder: [String] = ["FR1-xhttp", "FR1-cf", "FR1-hy2", "FR1"]
+    let transportLadder: [String] = ["FR1-xhttp", "FR1-cf", "FR1-hy2", "FR1-wg", "FR1"]
 
     // MARK: - Settings from UserDefaults
 
