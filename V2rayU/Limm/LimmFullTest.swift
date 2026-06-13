@@ -246,29 +246,65 @@ final class LimmFullTest {
 
         for server in servers {
             let label = server.remark.isEmpty ? server.name : server.remark
+            let isHy2 = LimmAutoSwitch.isHy2Transport(label) || LimmAutoSwitch.isHy2Transport(server.name)
             var profileOk = false
             var profileMs: Int? = nil
-            step("▸ \(label)") {
-                DispatchQueue.main.sync {
-                    UserDefaults.set(forKey: .v2rayCurrentServerName, value: server.name)
-                    V2rayLaunch.startV2rayCore()
-                }
-                let port = UserDefaults.standard.integer(forKey: "localSockPort").nonzero ?? 1080
 
-                guard waitForSocks(port: port, maxSec: 10) else {
+            step("▸ \(label)") {
+                if isHy2 {
+                    // ── Hysteria2 profile: bypass xray, use hy2 binary + SOCKS :1088 ──
+                    DispatchQueue.main.sync {
+                        UserDefaults.set(forKey: .v2rayCurrentServerName, value: server.name)
+                        // Do NOT call startV2rayCore() — xray crashes on hysteria2 config.
+                    }
+                    // Stop any running xray/hy2 first.
+                    DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
+                    if LimmHy2Process.shared.isRunning { LimmHy2Process.shared.stop() }
+
+                    let ok = LimmHy2Process.shared.start(transport: label)
+                    guard ok else {
+                        Thread.sleep(forTimeInterval: 0.5)
+                        return (false, "hysteria2 binary не запустился")
+                    }
+
+                    let hy2Port = LimmHy2Process.socksPort
+                    guard waitForSocks(port: hy2Port, maxSec: 12) else {
+                        LimmHy2Process.shared.stop()
+                        Thread.sleep(forTimeInterval: 0.5)
+                        return (false, "SOCKS :1088 не поднялся за 12s")
+                    }
+
+                    let t0 = Date()
+                    let (ok2, detail) = testEgressIP(socksPortOverride: hy2Port)
+                    if ok2 { profileMs = Int(Date().timeIntervalSince(t0) * 1000) }
+                    profileOk = ok2
+
+                    LimmHy2Process.shared.stop()
+                    Thread.sleep(forTimeInterval: 0.5)
+                    return (ok2, detail)
+                } else {
+                    // ── Standard xray profile ──────────────────────────────────────
+                    DispatchQueue.main.sync {
+                        UserDefaults.set(forKey: .v2rayCurrentServerName, value: server.name)
+                        V2rayLaunch.startV2rayCore()
+                    }
+                    let port = UserDefaults.standard.integer(forKey: "localSockPort").nonzero ?? 1080
+
+                    guard waitForSocks(port: port, maxSec: 10) else {
+                        DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
+                        Thread.sleep(forTimeInterval: 0.5)
+                        return (false, "SOCKS не поднялся за 10s")
+                    }
+
+                    let t0 = Date()
+                    let (ok, detail) = testEgressIP()
+                    if ok { profileMs = Int(Date().timeIntervalSince(t0) * 1000) }
+                    profileOk = ok
+
                     DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
                     Thread.sleep(forTimeInterval: 0.5)
-                    return (false, "SOCKS не поднялся за 10s")
+                    return (ok, detail)
                 }
-
-                let t0 = Date()
-                let (ok, detail) = testEgressIP()
-                if ok { profileMs = Int(Date().timeIntervalSince(t0) * 1000) }
-                profileOk = ok
-
-                DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
-                Thread.sleep(forTimeInterval: 0.5)
-                return (ok, detail)
             }
             profileResults.append((name: label, ok: profileOk, latencyMs: profileMs))
         }
@@ -287,26 +323,41 @@ final class LimmFullTest {
             let bestServer  = servers[bestIdx]
             let bestLabel   = bestServer.remark.isEmpty ? bestServer.name : bestServer.remark
             let bestLatency = profileResults[bestIdx].latencyMs   // egress latency из теста
+            let bestIsHy2   = LimmAutoSwitch.isHy2Transport(bestLabel) ||
+                              LimmAutoSwitch.isHy2Transport(bestServer.name)
             w.appendLine("\n")
             step("Чекин (VPN on · \(bestLabel))") {
                 DispatchQueue.main.sync {
                     UserDefaults.set(forKey: .v2rayCurrentServerName, value: bestServer.name)
-                    V2rayLaunch.startV2rayCore()
                 }
-                let port = (UserDefaults.standard.integer(forKey: "localSockPort")).nonzero ?? 1080
-                guard waitForSocks(port: port, maxSec: 25) else {
+                let socksPort: Int
+                if bestIsHy2 {
+                    // For hy2: start hysteria2 binary, wait for SOCKS :1088
                     DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
+                    guard LimmHy2Process.shared.start(transport: bestLabel) else {
+                        Thread.sleep(forTimeInterval: 0.5)
+                        return (false, "hysteria2 не запустился для финального чекина")
+                    }
+                    socksPort = LimmHy2Process.socksPort
+                } else {
+                    DispatchQueue.main.sync { V2rayLaunch.startV2rayCore() }
+                    socksPort = (UserDefaults.standard.integer(forKey: "localSockPort")).nonzero ?? 1080
+                }
+
+                guard waitForSocks(port: socksPort, maxSec: 25) else {
+                    if bestIsHy2 { LimmHy2Process.shared.stop() }
+                    else { DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() } }
                     Thread.sleep(forTimeInterval: 0.5)
                     return (false, "SOCKS не поднялся за 25s")
                 }
                 let sem = DispatchSemaphore(value: 0)
                 var httpCode = 0; var httpMsg = ""
-                // performQuick: нет curl-проб, сразу POST → завершается за <1s
                 LimmCheckin.shared.performQuick(egressLatencyMs: bestLatency) { code, msg in
                     httpCode = code; httpMsg = msg; sem.signal()
                 }
                 let r = sem.wait(timeout: .now() + 10)
-                DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
+                if bestIsHy2 { LimmHy2Process.shared.stop() }
+                else { DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() } }
                 Thread.sleep(forTimeInterval: 0.5)
                 if r == .timedOut { return (false, "timeout 10s") }
                 return (httpCode == 200,
@@ -360,9 +411,11 @@ final class LimmFullTest {
     /// XHTTP может вернуть пустой ответ на первый запрос (~15s timeout) — делаем до 3 попыток.
     private let egressRetryMax = 3
 
-    private func testEgressIP() -> (Bool, String) {
+    /// - Parameter socksPortOverride: if set, uses this port instead of reading UserDefaults.
+    ///   Pass `LimmHy2Process.socksPort` (1088) for hy2 profiles.
+    private func testEgressIP(socksPortOverride: Int? = nil) -> (Bool, String) {
         let port = UserDefaults.standard.integer(forKey: "localSockPort")
-        let socksPort = port > 0 ? port : 1080
+        let socksPort = socksPortOverride ?? (port > 0 ? port : 1080)
 
         for attempt in 1...egressRetryMax {
             let proc = Process()

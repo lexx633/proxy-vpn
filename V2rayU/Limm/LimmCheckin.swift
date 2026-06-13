@@ -210,6 +210,11 @@ class LimmCheckin {
             performAWG(checkinCompletion: checkinCompletion)
             return
         }
+        // ─── Hysteria2 (SOCKS on :1088, no xray) special-case ───────────
+        if LimmAutoSwitch.isHy2Transport(curServer) && LimmHy2Process.shared.isRunning {
+            performHy2(transport: curServer, checkinCompletion: checkinCompletion)
+            return
+        }
 
         let token   = LimmConfig.token
         let uid     = LimmConfig.clientUID()
@@ -387,6 +392,76 @@ class LimmCheckin {
         // Update L3 source of truth for LimmAutoSwitch (only the direct-egress verdict).
         LimmCheckin.lastL3ok   = egressOK
         LimmCheckin.lastL3date = Date()
+
+        postCheckin(payload: payload, token: LimmConfig.token, completion: checkinCompletion)
+    }
+
+    // MARK: - Hysteria2 checkin (SOCKS on :1088 — closes hy2 tunnel verification)
+
+    /// Diagnostic cycle while a Hysteria2 transport is active.
+    /// Probes via SOCKS5 on :1088 (the port hysteria2 exposes locally).
+    /// L3 source of truth = L2 SOCKS handshake to server + correct egress IP.
+    private func performHy2(transport: String, checkinCompletion: ((Int, String) -> Void)? = nil) {
+        let uid   = LimmConfig.clientUID()
+        let socks = "127.0.0.1:\(LimmHy2Process.socksPort)"
+
+        // L0 — local internet (same as normal checkin)
+        let l0 = curlDirect("http://1.1.1.1", timeout: 5)
+
+        // L1 — direct TCP to server (bypasses proxy)
+        var l1 = 0; var latencyMs = 0
+        var samples: [Int] = []
+        for _ in 0..<3 {
+            let t = Date()
+            if curlDirect("http://\(LimmConfig.serverIP):\(LimmConfig.serverPort)", timeout: 5) == 1 {
+                samples.append(Int(Date().timeIntervalSince(t) * 1000))
+                l1 = 1
+            }
+        }
+        if !samples.isEmpty { latencyMs = samples.reduce(0, +) / samples.count }
+
+        // L2/L3 — connect to server through hy2 SOCKS
+        let (serverCode, _) = curl(["--socks5", socks, "--connect-timeout", "8",
+                                    "-o", "/dev/null",
+                                    "https://\(LimmConfig.serverIP):\(LimmConfig.serverPort)"],
+                                   timeout: 10)
+        let l2 = (serverCode != "000") ? 1 : 0
+        let l3 = l2
+
+        // L4 — egress IP (accept either FR1 or DE1 server)
+        let (ipCode, ipBody) = curl(["--socks5", socks, "https://api.ipify.org"], timeout: 15)
+        var l4 = 0; var egressIP = ""
+        if ipCode == "200" {
+            egressIP = ipBody.trimmingCharacters(in: .whitespacesAndNewlines)
+            let expectedIP = transport.uppercased().contains("DE1") ? "77.90.52.123" : LimmConfig.serverIP
+            l4 = (egressIP == expectedIP) ? 1 : 0
+        }
+
+        NSLog("[Limm] HY2 checkin (%@) l0=%d l1=%d l2=%d l3=%d l4=%d egress=%@",
+              transport, l0, l1, l2, l3, l4, egressIP)
+
+        LimmCheckin.lastL3ok   = (l3 == 1)
+        LimmCheckin.lastL3date = Date()
+
+        let raw: [String: Any] = [
+            "dest_google":   l3 == 1 ? "ok" : "down",
+            "dest_telegram": l3 == 1 ? "ok" : "down",
+            "services":      ["tg":   l3 == 1 ? "ok" : "down",
+                              "ggl":  l3 == 1 ? "ok" : "down",
+                              "chgpt": l3 == 1 ? "ok" : "down"],
+            "egress_ip":     egressIP,
+            "transport":     "hy2",
+        ]
+        var payload: [String: Any] = [
+            "client_uid":   uid,
+            "kind":         LimmConfig.clientKind,
+            "label":        LimmConfig.clientLabel,
+            "app_version":  LimmConfig.appVersion,
+            "l0_local_net": l0, "l1_tcp443": l1, "l2_handshake": l2, "l3_tunnel": l3, "l4_dest": l4,
+            "vpn_running":  1,
+            "raw":          raw,
+        ]
+        if latencyMs > 0 { payload["latency_ms"] = latencyMs }
 
         postCheckin(payload: payload, token: LimmConfig.token, completion: checkinCompletion)
     }

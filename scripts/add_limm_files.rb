@@ -15,6 +15,7 @@ LIMM_FILES   = %w[
   V2rayU/Limm/LimmFullTest.swift
   V2rayU/Limm/LimmAutoSwitch.swift
   V2rayU/Limm/LimmAWGProcess.swift
+  V2rayU/Limm/LimmHy2Process.swift
   V2rayU/Limm/LimmBrowserBench.swift
   V2rayU/Limm/LimmSecrets.swift
   V2rayU/Limm/LimmBuildInfo.swift

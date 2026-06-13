@@ -128,6 +128,37 @@ jobs:
       - name: Add awg-core to xcodeproj
         run: ruby scripts/add_awg_resource.rb
 
+      # ── Download & bundle hysteria2 (universal arm64+amd64 binary) ──
+      # LimmHy2Process.swift launches this binary for DE1-hy2 / FR1-hy2 transports.
+      # Xray-core does not support the hysteria2 protocol natively → separate binary needed.
+      # Published at github.com/apernet/hysteria (official upstream).
+      - name: Download & bundle hysteria2
+        continue-on-error: true
+        run: |
+          set -e
+          mkdir -p Build/hy2-core
+          HY2_VER=$(curl -s -H "Authorization: Bearer ${GH_TOKEN}" \
+            https://api.github.com/repos/apernet/hysteria/releases/latest \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['tag_name'])")
+          echo "Downloading hysteria2 $HY2_VER"
+          curl -fLo Build/hy2-core/hy2-arm64 \
+            "https://github.com/apernet/hysteria/releases/download/${HY2_VER}/hysteria-darwin-arm64"
+          curl -fLo Build/hy2-core/hy2-amd64 \
+            "https://github.com/apernet/hysteria/releases/download/${HY2_VER}/hysteria-darwin-amd64"
+          lipo -create -output Build/hy2-core/hysteria2 \
+            Build/hy2-core/hy2-arm64 Build/hy2-core/hy2-amd64
+          chmod +x Build/hy2-core/hysteria2
+          rm Build/hy2-core/hy2-arm64 Build/hy2-core/hy2-amd64
+          ls -la Build/hy2-core/
+          file Build/hy2-core/hysteria2
+          Build/hy2-core/hysteria2 version 2>&1 | head -3 || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Bundle hysteria2 binary as a Resources folder ──────────
+      - name: Add hy2-core to xcodeproj
+        run: ruby scripts/add_hy2_resource.rb || echo "::warning::hy2-core xcodeproj step skipped (binary absent)"
+
       # ── Build ──────────────────────────────────────────────────
       - name: Build V2rayU.app
         run: |

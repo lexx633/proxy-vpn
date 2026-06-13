@@ -120,15 +120,26 @@ class LimmAutoSwitch {
     /// LimmAWGProcess (userspace TUN) instead of launching an xray profile.
     static let awgTransportName = "FR1-awg"
 
+    /// Hysteria2 transport names. These drive LimmHy2Process (SOCKS5 on :1088)
+    /// instead of xray (which does not support the hysteria2 protocol).
+    static func isHy2Transport(_ name: String) -> Bool { name.hasSuffix("-hy2") }
+
     private func doSwitch(to name: String) {
         lastSwitchDate = Date()
-        let leavingAWG = (UserDefaults.get(forKey: .v2rayCurrentServerName) ?? "") == LimmAutoSwitch.awgTransportName
+        let curName    = UserDefaults.get(forKey: .v2rayCurrentServerName) ?? ""
+        let leavingAWG = (curName == LimmAutoSwitch.awgTransportName)
+        let leavingHy2 = LimmAutoSwitch.isHy2Transport(curName)
+
         DispatchQueue.main.async {
             UserDefaults.set(forKey: .v2rayCurrentServerName, value: name)
 
             if name == LimmAutoSwitch.awgTransportName {
-                // → switching TO AmneziaWG: stop xray (frees SOCKS :1087), bring up AWG TUN.
+                // → switching TO AmneziaWG: stop xray + hy2, bring up AWG TUN.
                 NSLog("[AutoSwitch] entering AWG transport")
+                if leavingHy2 || LimmHy2Process.shared.isRunning {
+                    NSLog("[AutoSwitch] leaving HY2 transport (→ AWG)")
+                    LimmHy2Process.shared.stop()
+                }
                 V2rayLaunch.stopV2rayCore()
                 DispatchQueue.global(qos: .userInitiated).async {
                     let ok = LimmAWGProcess.shared.start()
@@ -139,11 +150,33 @@ class LimmAutoSwitch {
                 return
             }
 
+            if LimmAutoSwitch.isHy2Transport(name) {
+                // → switching TO Hysteria2: stop xray + AWG, start hysteria2.
+                NSLog("[AutoSwitch] entering HY2 transport: %@", name)
+                if leavingAWG || LimmAWGProcess.shared.isRunning {
+                    NSLog("[AutoSwitch] leaving AWG transport (→ HY2)")
+                    LimmAWGProcess.shared.stop()
+                }
+                if LimmHy2Process.shared.isRunning { LimmHy2Process.shared.stop() }
+                V2rayLaunch.stopV2rayCore()
+                let switchName = name   // capture before async block
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let ok = LimmHy2Process.shared.start(transport: switchName)
+                    NSLog("[AutoSwitch] HY2 start (%@) → %@", switchName, ok ? "ok" : "FAILED")
+                    DispatchQueue.main.async { menuController.showServers() }
+                }
+                LimmAutoSwitch.sendSwitchEvent(to: name)
+                return
+            }
+
             // → switching TO an xray transport.
             if leavingAWG || LimmAWGProcess.shared.isRunning {
-                // Leaving AWG: tear down the TUN before starting xray.
-                NSLog("[AutoSwitch] leaving AWG transport")
+                NSLog("[AutoSwitch] leaving AWG transport (→ xray)")
                 LimmAWGProcess.shared.stop()
+            }
+            if leavingHy2 || LimmHy2Process.shared.isRunning {
+                NSLog("[AutoSwitch] leaving HY2 transport (→ xray)")
+                LimmHy2Process.shared.stop()
             }
             V2rayLaunch.restartV2ray()
             menuController.showServers()
