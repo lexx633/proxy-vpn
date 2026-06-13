@@ -55,15 +55,6 @@ class MenuController: NSObject, NSMenuDelegate {
         return item
     }()
 
-    // "Browser Bench…" — WKWebView-бенчмарк через системный прокси (VPN-туннель)
-    private lazy var browserBenchMenuItem: NSMenuItem = {
-        let item = NSMenuItem(title: "Browser Bench…",
-                              action: #selector(runBrowserBench(_:)),
-                              keyEquivalent: "")
-        item.target = self
-        return item
-    }()
-
     // Saved references for Preferences and Quit (set in simplifyMenu)
     private var prefsItem: NSMenuItem?
     private var quitItem:  NSMenuItem?
@@ -133,7 +124,6 @@ class MenuController: NSObject, NSMenuDelegate {
         let checkinOn = UserDefaults.standard.bool(forKey: LimmConfig.checkinEnabledKey)
         if checkinOn {
             statusMenu.addItem(fullTestMenuItem)
-            statusMenu.addItem(browserBenchMenuItem)
         }
         // 6. Quit
         if let q = quitItem { statusMenu.addItem(q) }
@@ -242,10 +232,6 @@ class MenuController: NSObject, NSMenuDelegate {
 
     @objc func runFullTest(_ sender: Any) {
         LimmFullTest.shared.run()
-    }
-
-    @objc func runBrowserBench(_ sender: Any) {
-        LimmBrowserBench.shared.run()
     }
 
     @objc func sendDiagnosticLog(_ sender: Any) {
