@@ -327,7 +327,13 @@ final class LimmFullTest {
         // (L1 ×3 по 5s при ISP-блоке = 15s + L4 + tunnel×3 + services = до 70s),
         // что вешает шаг. Вместо этого — performQuick(): прямой POST без проб, <1s.
         var logUploaded = false   // true когда лог ушёл через рабочий туннель (см. ниже)
-        if let bestIdx = profileResults.firstIndex(where: { $0.ok }) {
+        // «Лучший» = самый быстрый рабочий профиль (min latency), а НЕ первый по списку — иначе
+        // при DE1-first чекин/дашборд шли бы через медленный DE1. Порядок теста (DE1 сверху) на это не влияет.
+        let bestIdx = profileResults.enumerated()
+            .filter { $0.element.ok }
+            .min { ($0.element.latencyMs ?? Int.max) < ($1.element.latencyMs ?? Int.max) }?
+            .offset
+        if let bestIdx = bestIdx {
             let bestServer  = servers[bestIdx]
             let bestLabel   = bestServer.remark.isEmpty ? bestServer.name : bestServer.remark
             let bestLatency = profileResults[bestIdx].latencyMs   // egress latency из теста
