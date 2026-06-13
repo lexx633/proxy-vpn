@@ -135,7 +135,6 @@ final class LimmBrowserBench: NSObject, WKNavigationDelegate {
     private override init() {}
 
     private let testURLs: [String] = [
-        "https://ya.ru",
         "https://vk.com",
         "https://www.gosuslugi.ru",
     ]
