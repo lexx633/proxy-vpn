@@ -26,11 +26,11 @@ final class LimmHy2Process {
     // MARK: - Per-server constants (passwords are in sub-ru.json, not secrets)
     private enum HY2 {
         // DE1 — 77.90.52.123
-        static let de1Server       = "77.90.52.123:20000"
+        static let de1Server       = "77.90.52.123:443"
         static let de1Auth         = "238e538743fa7e42552457dd95f1a4ef"
         static let de1ObfsPassword = "725574d0caabd0fe07858a649f18fa53"
         // FR1 — 45.95.175.170
-        static let fr1Server       = "45.95.175.170:20000"
+        static let fr1Server       = "45.95.175.170:443"
         static let fr1Auth         = "wT2HgRNnTJauLQd6eHjpfBd7"
         static let fr1ObfsPassword = "FKtE5ePLMt5USnNgGZVQMhnB"
         // TLS (both servers share SNI; insecure=true, pinSHA256 omitted for simplicity)
