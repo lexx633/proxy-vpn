@@ -438,8 +438,8 @@ final class LimmFullTest {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 if !ip.isEmpty {
                     let isVPN = (ip == LimmConfig.serverIP)
-                    let tag   = isVPN ? "= VPN ✓" : "= клиент IP ✗"
-                    return (isVPN, "\(ip)  \(tag)")
+                    let tag   = isVPN ? "VPN ✓" : "не VPN ✗"
+                    return (isVPN, tag)
                 }
             } catch {
                 return (false, error.localizedDescription)
