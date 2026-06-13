@@ -8,18 +8,22 @@ class LimmLogReporter {
 
     // MARK: - Entry point
 
-    func send(completion: @escaping (Bool, String) -> Void) {
+    /// - Parameter socksPort: when set, the probe AND the upload ride the working tunnel
+    ///   (`curl --socks5 127.0.0.1:port`). When nil, upload goes direct (`--noproxy '*'`).
+    ///   Prefer passing the live SOCKS port of the best profile so the log reaches the server
+    ///   through FR1 even when the direct RU→Cloudflare path is blocked.
+    func send(socksPort: Int? = nil, completion: @escaping (Bool, String) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
-            let bundle = self.collectBundle()
-            self.upload(bundle: bundle, completion: completion)
+            let bundle = self.collectBundle(socksPort: socksPort)
+            self.upload(bundle: bundle, socksPort: socksPort, completion: completion)
         }
     }
 
     // MARK: - Bundle collection
 
-    private func collectBundle() -> [String: Any] {
-        let socksPort = UserDefaults.standard.integer(forKey: "localSockPort").nonzero ?? 1080
-        let socks     = "127.0.0.1:\(socksPort)"
+    private func collectBundle(socksPort: Int? = nil) -> [String: Any] {
+        let port  = socksPort ?? (UserDefaults.standard.integer(forKey: "localSockPort").nonzero ?? 1080)
+        let socks = "127.0.0.1:\(port)"
 
         var bundle: [String: Any] = [
             "client_uid":   LimmConfig.clientUID(),
@@ -150,16 +154,18 @@ class LimmLogReporter {
 
     // MARK: - Upload
 
-    private func upload(bundle: [String: Any], completion: @escaping (Bool, String) -> Void) {
+    private func upload(bundle: [String: Any], socksPort: Int? = nil,
+                        completion: @escaping (Bool, String) -> Void) {
         guard let body = try? JSONSerialization.data(withJSONObject: bundle) else {
             completion(false, "json error"); return
         }
 
-        // The diagnostic log MUST arrive precisely when the tunnel is broken. URLSession
-        // with an empty connectionProxyDictionary does NOT reliably bypass the macOS system
-        // SOCKS proxy that V2rayU sets, so the (large) upload rode the flaky tunnel and died
-        // with "network connection was lost"/"request timed out". curl --noproxy '*' guarantees
-        // a direct egress, matching every other probe in this codebase.
+        // Transport selection:
+        //  • socksPort set → ride the working tunnel (`--socks5`). The direct RU→Cloudflare
+        //    path is flaky/blocked from some ISPs; going through FR1 is reliable when a profile
+        //    is up. This is the primary path (caller passes the best profile's live SOCKS port).
+        //  • socksPort nil → direct (`--noproxy '*'`) — fallback for when NO tunnel works, so
+        //    the "tunnel broken" diagnostic still has a chance to reach the server.
         let tmp = NSTemporaryDirectory() + "limm_applog_\(UUID().uuidString).json"
         do { try body.write(to: URL(fileURLWithPath: tmp)) }
         catch { completion(false, "tmp write: \(error.localizedDescription)"); return }
@@ -168,9 +174,10 @@ class LimmLogReporter {
         func post() -> (Int, String) {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-            p.arguments = ["--max-time", "30", "--connect-timeout", "10",
-                           "-s", "--noproxy", "*",
-                           "-X", "POST",
+            let proxyArgs: [String] = socksPort.map { ["--socks5", "127.0.0.1:\($0)"] } ?? ["--noproxy", "*"]
+            p.arguments = ["--max-time", "30", "--connect-timeout", "10", "-s"]
+                        + proxyArgs
+                        + ["-X", "POST",
                            "-H", "Content-Type: application/json",
                            "-H", "Authorization: Bearer \(LimmConfig.token)",
                            "--data-binary", "@\(tmp)",

@@ -319,6 +319,7 @@ final class LimmFullTest {
         // ВАЖНО: не используем perform() — он запускает все curl-пробы синхронно
         // (L1 ×3 по 5s при ISP-блоке = 15s + L4 + tunnel×3 + services = до 70s),
         // что вешает шаг. Вместо этого — performQuick(): прямой POST без проб, <1s.
+        var logUploaded = false   // true когда лог ушёл через рабочий туннель (см. ниже)
         if let bestIdx = profileResults.firstIndex(where: { $0.ok }) {
             let bestServer  = servers[bestIdx]
             let bestLabel   = bestServer.remark.isEmpty ? bestServer.name : bestServer.remark
@@ -356,12 +357,24 @@ final class LimmFullTest {
                     httpCode = code; httpMsg = msg; sem.signal()
                 }
                 let r = sem.wait(timeout: .now() + 10)
+
+                // Лог отправляем ПОКА туннель ещё поднят на рабочем профиле — через SOCKS
+                // (--socks5), т.к. прямой RU→Cloudflare путь флапает. Гасим ядро только после.
+                let lsem = DispatchSemaphore(value: 0)
+                var logOk = false; var logDetail = ""
+                LimmLogReporter.shared.send(socksPort: socksPort) { ok, msg in
+                    logOk = ok; logDetail = msg; lsem.signal()
+                }
+                _ = lsem.wait(timeout: .now() + 40)
+                logUploaded = logOk
+
                 if bestIsHy2 { LimmHy2Process.shared.stop() }
                 else { DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() } }
                 Thread.sleep(forTimeInterval: 0.5)
-                if r == .timedOut { return (false, "timeout 10s") }
-                return (httpCode == 200,
-                        httpCode == 200 ? "ok \(httpCode)" : "fail \(httpCode) \(httpMsg.prefix(40))")
+                let logNote = logOk ? "лог ушёл (туннель)" : "лог нет: \(logDetail.prefix(30))"
+                if r == .timedOut { return (false, "timeout 10s · \(logNote)") }
+                let base = httpCode == 200 ? "ok \(httpCode)" : "fail \(httpCode) \(httpMsg.prefix(40))"
+                return (httpCode == 200, "\(base) · \(logNote)")
             }
         }
 
@@ -376,17 +389,20 @@ final class LimmFullTest {
             if wasAutoSwitch { LimmAutoSwitch.shared.enable() }
         }
 
-        // 5. Отправка лога (VPN выключен → нет loop-проблемы) ─────────
-        w.appendLine("\n")
-        step("Отправка диагностического лога") {
-            let sem = DispatchSemaphore(value: 0)
-            var ok = false; var detail = ""
-            LimmLogReporter.shared.send { success, msg in
-                ok = success; detail = msg; sem.signal()
+        // 5. Фолбэк-аплоад лога прямым каналом (VPN выкл) — ТОЛЬКО если через туннель не ушёл
+        //    (ни один профиль не ожил, либо tunnel-upload не удался).
+        if !logUploaded {
+            w.appendLine("\n")
+            step("Отправка лога (фолбэк · прямой)") {
+                let sem = DispatchSemaphore(value: 0)
+                var ok = false; var detail = ""
+                LimmLogReporter.shared.send { success, msg in
+                    ok = success; detail = msg; sem.signal()
+                }
+                let res = sem.wait(timeout: .now() + 30)
+                if res == .timedOut { return (false, "timeout") }
+                return (ok, detail)
             }
-            let res = sem.wait(timeout: .now() + 30)
-            if res == .timedOut { return (false, "timeout") }
-            return (ok, detail)
         }
 
         // ── Итог ─────────────────────────────────────────────────────
