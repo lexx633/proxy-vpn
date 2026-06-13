@@ -223,9 +223,11 @@ class V2rayLaunch: NSObject {
             // start and show servers
             startV2rayCore()
         } else {
-            // show off status
+            // VPN off: start in direct-passthrough mode so system proxy stays usable.
+            writeDirect()
+            _ = V2rayLaunch.Start()
+            setSystemProxy(mode: .global)
             menuController.setStatusOff()
-            // show servers
             menuController.showServers()
         }
 
@@ -297,14 +299,57 @@ class V2rayLaunch: NSObject {
     }
 
     static func stopV2rayCore() {
-        // stop launch
-        V2rayLaunch.Stop()
-        // off system proxy
-        V2rayLaunch.setSystemProxy(mode: .off)
+        // Switch to direct-passthrough mode instead of fully stopping.
+        // xray keeps running on the same SOCKS/HTTP ports but routes everything
+        // directly to the internet — no VPN server involved.
+        // This way any app using the system proxy continues to work normally.
+        V2rayLaunch.writeDirect()
+        // Brief pause so launchctl stop fully releases the ports before Start() checks them.
+        Thread.sleep(forTimeInterval: 0.5)
+        _ = V2rayLaunch.Start()           // restart xray with direct config
+        setSystemProxy(mode: .global)     // keep system proxy pointed at local ports
         // set status
         menuController.setStatusOff()
         // reload menu
         menuController.showServers()
+    }
+
+    /// Write a minimal xray config that accepts SOCKS+HTTP on local ports and
+    /// forwards all traffic directly to the internet (no VPN server).
+    /// Called when the user turns VPN off — traffic passes through unmodified.
+    static func writeDirect() {
+        let sockPort = getSocksProxyPort()
+        let httpPort = getHttpProxyPort()
+        let config = """
+        {
+          "log": {"access": "", "error": "", "loglevel": "none"},
+          "inbounds": [
+            {
+              "port": \(sockPort),
+              "protocol": "socks",
+              "settings": {"auth": "noauth", "udp": false}
+            },
+            {
+              "port": \(httpPort),
+              "protocol": "http",
+              "settings": {}
+            }
+          ],
+          "outbounds": [
+            {"protocol": "freedom", "tag": "direct", "settings": {}}
+          ]
+        }
+        """
+        do {
+            let url = URL(fileURLWithPath: JsonConfigFilePath)
+            if FileManager.default.fileExists(atPath: JsonConfigFilePath) {
+                try? FileManager.default.removeItem(at: url)
+            }
+            try config.write(to: url, atomically: true, encoding: .utf8)
+            NSLog("[V2rayLaunch] direct config written (socks:%d http:%d)", sockPort, httpPort)
+        } catch {
+            NSLog("[V2rayLaunch] writeDirect failed: %@", error.localizedDescription)
+        }
     }
 
     static func Start() -> Bool {
