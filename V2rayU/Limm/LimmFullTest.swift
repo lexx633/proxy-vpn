@@ -233,7 +233,14 @@ final class LimmFullTest {
 
         // 3. Цикл по профилям ─────────────────────────────────────────
         // Получаем список на main-потоке, затем тестируем каждый профиль.
-        let servers = DispatchQueue.main.sync { V2rayServer.list() }.filter { $0.isValid }
+        // DE1 первым в полном тесте (приоритетная нода), порядок внутри групп сохраняется.
+        // V2rayU не переставляет существующие серверы при обновлении подписки, поэтому
+        // локальный порядок мог застрять с FR1 впереди — пересортируем здесь явно.
+        let allServers = DispatchQueue.main.sync { V2rayServer.list() }.filter { $0.isValid }
+        func isDe1(_ s: V2rayItem) -> Bool {
+            (s.remark.isEmpty ? s.name : s.remark).uppercased().contains("DE1")
+        }
+        let servers = allServers.filter { isDe1($0) } + allServers.filter { !isDe1($0) }
         let savedServer = UserDefaults.standard.string(forKey: "v2rayCurrentServerName") ?? ""
         let wasVpnOn = UserDefaults.standard.bool(forKey: "v2rayTurnOn")
         let wasAutoSwitch = LimmAutoSwitch.shared.isEnabled
