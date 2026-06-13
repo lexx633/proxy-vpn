@@ -277,7 +277,7 @@ class LimmCheckin {
             let (ipCode, ipBody) = curl(["--socks5", socks, "https://api.ipify.org"], timeout: 15)
             if ipCode == "200" {
                 egressIP = ipBody.trimmingCharacters(in: .whitespacesAndNewlines)
-                l4 = (egressIP == LimmConfig.serverIP) ? 1 : 0
+                l4 = LimmConfig.isOurEgress(egressIP) ? 1 : 0
             }
 
             // tunnel_ms — 3 roundtrips through VPN tunnel → average
@@ -365,7 +365,7 @@ class LimmCheckin {
         // Egress IP via direct curl (NO --socks5). Routed through utun when AWG is up.
         let (ipCode, ipBody) = curlNoProxy("https://api.ipify.org", timeout: 12)
         let egressIP = ipBody.trimmingCharacters(in: .whitespacesAndNewlines)
-        let egressOK = (ipCode == "200" && egressIP == LimmConfig.serverIP)
+        let egressOK = (ipCode == "200" && LimmConfig.isOurEgress(egressIP))
         let l = egressOK ? 1 : 0   // L1/L2/L3/L4 all collapse to "is the tunnel carrying us out via the server"
 
         NSLog("[Limm] AWG checkin egress=%@ ok=%d", egressIP, egressOK ? 1 : 0)
@@ -433,8 +433,7 @@ class LimmCheckin {
         var l4 = 0; var egressIP = ""
         if ipCode == "200" {
             egressIP = ipBody.trimmingCharacters(in: .whitespacesAndNewlines)
-            let expectedIP = transport.uppercased().contains("DE1") ? "77.90.52.123" : LimmConfig.serverIP
-            l4 = (egressIP == expectedIP) ? 1 : 0
+            l4 = LimmConfig.isOurEgress(egressIP) ? 1 : 0
         }
 
         NSLog("[Limm] HY2 checkin (%@) l0=%d l1=%d l2=%d l3=%d l4=%d egress=%@",

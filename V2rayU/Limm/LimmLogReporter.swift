@@ -82,7 +82,7 @@ class LimmLogReporter {
 
         let (_, ipRaw) = curl(["--socks5", socks, "https://api.ipify.org"])
         let egressIP = ipRaw.trimmingCharacters(in: .whitespacesAndNewlines)
-        let l4 = egressIP == LimmConfig.serverIP ? 1 : 0
+        let l4 = LimmConfig.isOurEgress(egressIP) ? 1 : 0
 
         // Service probes run in parallel — max time = 1 probe timeout (5s) instead of 3×timeout.
         var tgStat = "down"; var gglStat = "down"; var chgptStat = "down"

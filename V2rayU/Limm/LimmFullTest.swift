@@ -453,7 +453,7 @@ final class LimmFullTest {
                 let ip  = (String(data: raw, encoding: .utf8) ?? "")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 if !ip.isEmpty {
-                    let isVPN = (ip == LimmConfig.serverIP)
+                    let isVPN = LimmConfig.isOurEgress(ip)
                     let tag   = isVPN ? "VPN ✓" : "не VPN ✗"
                     return (isVPN, tag)
                 }
