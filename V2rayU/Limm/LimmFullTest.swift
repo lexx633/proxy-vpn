@@ -328,7 +328,7 @@ final class LimmFullTest {
         // что вешает шаг. Вместо этого — performQuick(): прямой POST без проб, <1s.
         var logUploaded = false   // true когда лог ушёл через рабочий туннель (см. ниже)
         // Сохраняем лучший профиль для фолбэк-аплоада (см. шаг 5 ниже).
-        var bestFallback: (server: V2rayServer, label: String, isHy2: Bool)? = nil
+        var bestFallback: (server: V2rayItem, label: String, isHy2: Bool)? = nil
         // «Лучший» = самый быстрый рабочий профиль (min latency), а НЕ первый по списку — иначе
         // при DE1-first чекин/дашборд шли бы через медленный DE1. Порядок теста (DE1 сверху) на это не влияет.
         let bestIdx = profileResults.enumerated()
