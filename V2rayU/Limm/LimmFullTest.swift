@@ -378,7 +378,7 @@ final class LimmFullTest {
                 LimmLogReporter.shared.send(socksPort: socksPort) { ok, msg in
                     logOk = ok; logDetail = msg; lsem.signal()
                 }
-                _ = lsem.wait(timeout: .now() + 40)
+                _ = lsem.wait(timeout: .now() + 55)
                 logUploaded = logOk
 
                 if bestIsHy2 { LimmHy2Process.shared.stop() }
@@ -412,7 +412,7 @@ final class LimmFullTest {
                 LimmLogReporter.shared.send { success, msg in
                     ok = success; detail = msg; sem.signal()
                 }
-                let res = sem.wait(timeout: .now() + 30)
+                let res = sem.wait(timeout: .now() + 38)
                 if res == .timedOut { return (false, "timeout") }
                 return (ok, detail)
             }
