@@ -134,7 +134,7 @@ class MenuController: NSObject, NSMenuDelegate {
     func setStatusOff() {
         DispatchQueue.main.async {
             self.v2rayStatusItem.title = "limm VPN: Off"
-            self.toggleV2rayItem.title = "Turn VPN On"
+            self.toggleV2rayItem.title = "VPN On"
             if let button = self.statusItem.button {
                 button.image = NSImage(named: NSImage.Name("IconOff"))
             }
@@ -144,8 +144,10 @@ class MenuController: NSObject, NSMenuDelegate {
 
     func setStatusOn(mode: RunMode) {
         DispatchQueue.main.async {
-            self.v2rayStatusItem.title = "limm VPN: On"
-            self.toggleV2rayItem.title = "Turn VPN Off"
+            let profile = UserDefaults.get(forKey: .v2rayCurrentServerName) ?? ""
+            let statusTitle = profile.isEmpty ? "limm VPN: On" : "limm VPN: On - \(profile)"
+            self.v2rayStatusItem.title = statusTitle
+            self.toggleV2rayItem.title = "Turn Off"
             self.setModeIcon(mode: mode)
             UserDefaults.setBool(forKey: .v2rayTurnOn, value: true)
         }

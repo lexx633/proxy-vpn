@@ -24,7 +24,7 @@ class LimmAutoSwitch {
     /// Index 0 = preferred; failover goes 0→1→2→3→0 (cyclically).
     /// AmneziaWG ("FR1-awg") is NOT an xray profile — it's a userspace TUN driven by
     /// LimmAWGProcess. doSwitch() branches on this name. See docs/TZ-amneziawg-clients.md §B.
-    let transportLadder: [String] = ["FR1-xhttp", "FR1-cf", "FR1-hy2", "FR1-awg", "FR1-wg", "FR1"]
+    let transportLadder: [String] = ["FR1-xhttp", "FR1-cf", "FR1-hy2", "FR1-awg", "FR1-wg", "FR1-vl"]
 
     // MARK: - Settings from UserDefaults
 
