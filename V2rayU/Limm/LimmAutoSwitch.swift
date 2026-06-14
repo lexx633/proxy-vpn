@@ -124,7 +124,7 @@ class LimmAutoSwitch {
     /// instead of xray (which does not support the hysteria2 protocol).
     static func isHy2Transport(_ name: String) -> Bool { name.hasSuffix("-hy2") }
 
-    private func doSwitch(to name: String) {
+    func doSwitch(to name: String) {
         lastSwitchDate = Date()
         let curName    = UserDefaults.get(forKey: .v2rayCurrentServerName) ?? ""
         let leavingAWG = (curName == LimmAutoSwitch.awgTransportName)

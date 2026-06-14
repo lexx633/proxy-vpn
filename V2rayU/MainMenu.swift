@@ -278,9 +278,8 @@ class MenuController: NSObject, NSMenuDelegate {
         // Manual pick must exit Auto mode — otherwise the auto-switch timer keeps
         // the checkmark on "Auto" and overwrites the choice on its next tick.
         if LimmAutoSwitch.shared.isEnabled { LimmAutoSwitch.shared.disable() }
-        UserDefaults.set(forKey: .v2rayCurrentServerName, value: obj.name)
-        V2rayLaunch.restartV2ray()
-        showServers()   // refresh checkmarks: Auto off, picked server on
+        // Use doSwitch: correctly stops hy2/xray before starting the new transport.
+        LimmAutoSwitch.shared.doSwitch(to: obj.name)
     }
 
     @IBAction func switchRouting(_ sender: NSMenuItem) {
