@@ -191,22 +191,48 @@ final class LimmHy2Process {
         return c == 0 || c == 52 || c == 56
     }
 
-    /// Kill stray hysteria2 instances launched from our binary and wait until
-    /// the SOCKS port is released (up to 3s).
+    /// Run a CLI tool to completion, ignoring output/errors.
+    private func runTool(_ path: String, _ args: [String]) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: path)
+        p.arguments = args
+        p.standardOutput = Pipe(); p.standardError = Pipe()
+        do { try p.run(); p.waitUntilExit() } catch {
+            NSLog("[HY2] %@ failed: %@", path, error.localizedDescription)
+        }
+    }
+
+    /// SIGKILL whatever process currently holds the given TCP port (by port, any
+    /// name) — the most reliable way to clear a stuck :1088 from a prior run.
+    private func killByPort(_ port: Int) {
+        let out = Pipe()
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        p.arguments = ["-ti", "tcp:\(port)"]
+        p.standardOutput = out; p.standardError = Pipe()
+        do { try p.run(); p.waitUntilExit() } catch { return }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        guard let s = String(data: data, encoding: .utf8) else { return }
+        for tok in s.split(whereSeparator: { $0 == "\n" || $0 == " " }) {
+            if let pid = Int32(tok.trimmingCharacters(in: .whitespaces)), pid > 0 {
+                NSLog("[HY2] killing pid %d holding :%d", pid, port)
+                kill(pid, SIGKILL)
+            }
+        }
+    }
+
+    /// Ensure the SOCKS port is free before launching. Kills by port (lsof, any
+    /// process) AND pkills stray hysteria2 from our binary, then waits for release.
     private func freeSocksPort(binary: String) {
         if !socksPortInUse() { return }
-        NSLog("[HY2] :%d busy — killing stray hysteria2", LimmHy2Process.socksPort)
-        let kill = Process()
-        kill.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-        kill.arguments = ["-f", binary]
-        do {
-            try kill.run()
-            kill.waitUntilExit()
-        } catch {
-            NSLog("[HY2] pkill failed: %@", error.localizedDescription)
+        NSLog("[HY2] :%d busy — freeing", LimmHy2Process.socksPort)
+        killByPort(LimmHy2Process.socksPort)
+        runTool("/usr/bin/pkill", ["-f", binary])
+        let deadline = Date().addingTimeInterval(4)
+        while socksPortInUse() && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.2)
+            killByPort(LimmHy2Process.socksPort)
         }
-        let deadline = Date().addingTimeInterval(3)
-        while socksPortInUse() && Date() < deadline { Thread.sleep(forTimeInterval: 0.1) }
     }
 
     private func teardown() {
