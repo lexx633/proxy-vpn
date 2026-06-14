@@ -221,17 +221,23 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
 
+      # DEPLOY_HOST runs SSH on :22 under constant brute-force; default MaxStartups
+      # randomly drops new connections at banner exchange during attack bursts
+      # ("kex_exchange_identification: timed out"). Retry + timeouts make a single
+      # transient drop non-fatal. The remote command never runs on a pre-auth drop,
+      # so retrying mv/echo is safe.
       - name: Upload .dmg to limm.space
         run: |
-          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "mkdir -p /tmp/limm-mac-upload"
-          scp -i ~/.ssh/deploy_key \
-            build/${{ env.DMG_NAME }} \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/limm-mac-upload/
+          SSH_OPTS="-o ConnectTimeout=15 -o ServerAliveInterval=5 -o ServerAliveCountMax=3"
+          retry() { for i in 1 2 3; do "$@" && return 0; echo "::warning::attempt $i failed, retrying in $((i*5))s"; sleep $((i*5)); done; return 1; }
+          retry ssh $SSH_OPTS -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "mkdir -p /tmp/limm-mac-upload"
+          retry scp $SSH_OPTS -i ~/.ssh/deploy_key build/${{ env.DMG_NAME }} ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/limm-mac-upload/
 
       - name: Activate .dmg on server
         run: |
-          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+          SSH_OPTS="-o ConnectTimeout=15 -o ServerAliveInterval=5 -o ServerAliveCountMax=3"
+          retry() { for i in 1 2 3; do "$@" && return 0; echo "::warning::attempt $i failed, retrying in $((i*5))s"; sleep $((i*5)); done; return 1; }
+          retry ssh $SSH_OPTS -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
             "mv -f /tmp/limm-mac-upload/proxy_mac.dmg /var/www/limm/vpn/proxy_mac.dmg && \
              chmod 644 /var/www/limm/vpn/proxy_mac.dmg && \
              echo '{\"version\":\"${{ env.VERSION }}\",\"build\":\"${{ env.SHORT_SHA }}\"}' \
