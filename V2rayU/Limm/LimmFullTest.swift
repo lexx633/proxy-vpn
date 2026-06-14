@@ -275,10 +275,10 @@ final class LimmFullTest {
                     }
 
                     let hy2Port = LimmHy2Process.socksPort
-                    guard waitForSocks(port: hy2Port, maxSec: 12) else {
+                    guard waitForSocks(port: hy2Port, maxSec: 20) else {
                         LimmHy2Process.shared.stop()
                         Thread.sleep(forTimeInterval: 0.5)
-                        return (false, "SOCKS :1088 не поднялся за 12s")
+                        return (false, "SOCKS :1088 не поднялся за 20s")
                     }
 
                     let t0 = Date()

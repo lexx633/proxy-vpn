@@ -192,7 +192,9 @@ class LimmLogReporter {
         }
 
         var (code, msg) = post()
-        if code != 200 { (code, msg) = post() }   // one retry — RU uplink to CF is flaky
+        // Retry only on real HTTP errors (non-zero code), not on timeout (code=0).
+        // Two timeouts at 30s each = 60s, exceeding the 55s semaphore window in LimmFullTest.
+        if code > 0 && code != 200 { (code, msg) = post() }
         completion(code == 200, "\(code) \(msg)")
     }
 }
