@@ -210,6 +210,20 @@ final class LimmFullTest {
             if !ok { allOK = false }
         }
 
+        // Компактный рендер (профили / попытки носителя): "    name…" → "✓ name ·  detail".
+        // Без ⏳ и без [ms] общего шага. allowFail=true: падение не красит весь тест
+        // (ожидаемый перебор носителя — итог решает доставка лога, см. финальную строку).
+        @discardableResult
+        func stepCompact(_ name: String, allowFail: Bool = false, _ body: () -> (Bool, String)) -> Bool {
+            w.appendLine("    \(name)…\n")
+            let (ok, detail) = body()
+            let mark = ok ? "✓" : "✗"
+            let sep = detail.isEmpty ? "" : " ·  \(detail)"
+            w.appendLine("\(mark) \(name)\(sep)\n")
+            if !ok && !allowFail { allOK = false }
+            return ok
+        }
+
         w.appendLine("── Full Test начат \(timestamp()) ──\n\n")
 
         // 1. Очистить лог ─────────────────────────────────────────────
@@ -257,7 +271,7 @@ final class LimmFullTest {
             var profileOk = false
             var profileMs: Int? = nil
 
-            step("▸ \(label)") {
+            stepCompact(label) {
                 if isHy2 {
                     // ── Hysteria2 profile: bypass xray, use hy2 binary + SOCKS :1088 ──
                     DispatchQueue.main.sync {
@@ -288,9 +302,8 @@ final class LimmFullTest {
 
                     LimmHy2Process.shared.stop()
                     Thread.sleep(forTimeInterval: 0.5)
-                    // Показываем реальный egress-latency туннеля (не общее время шага,
-                    // которое включает старт/ожидание SOCKS/teardown ядра).
-                    return (ok2, ok2 ? "\(detail) · \(profileMs ?? 0)ms egress" : detail)
+                    // Реальный egress-latency туннеля (не общее время шага со стартом ядра).
+                    return (ok2, ok2 ? "✓ \(profileMs ?? 0)ms" : detail)
                 } else {
                     // ── Standard xray profile ──────────────────────────────────────
                     DispatchQueue.main.sync {
@@ -312,7 +325,7 @@ final class LimmFullTest {
 
                     DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
                     Thread.sleep(forTimeInterval: 0.5)
-                    return (ok, ok ? "\(detail) · \(profileMs ?? 0)ms egress" : detail)
+                    return (ok, ok ? "✓ \(profileMs ?? 0)ms" : detail)
                 }
             }
             profileResults.append((name: label, ok: profileOk, latencyMs: profileMs))
@@ -369,7 +382,7 @@ final class LimmFullTest {
         } else {
             for prof in workingProfiles {
                 if logUploaded { break }
-                step("Чекин+лог (VPN · \(prof.label))") {
+                stepCompact("Чекин+лог · \(prof.label)", allowFail: true) {
                     // Поднять туннель профиля.
                     if prof.isHy2 {
                         DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
@@ -403,7 +416,7 @@ final class LimmFullTest {
                         LimmCheckin.shared.performQuick(egressLatencyMs: prof.latency) { c, _ in
                             code = c; sem.signal()
                         }
-                        if sem.wait(timeout: .now() + 10) == .timedOut {
+                        if sem.wait(timeout: .now() + 8) == .timedOut {
                             checkinNote = "чекин timeout"
                         } else if code == 200 {
                             checkinDone = true; checkinNote = "чекин ok"
@@ -418,7 +431,9 @@ final class LimmFullTest {
                     LimmLogReporter.shared.send(socksPort: sp) { ok, msg in
                         logOk = ok; logDetail = msg; lsem.signal()
                     }
-                    let lres = lsem.wait(timeout: .now() + 55)
+                    // Успешная заливка лога занимает ~20s; 30s = запас. Раньше 55s →
+                    // дохлый носитель съедал ~65s, перебор до рабочего тянулся минуты.
+                    let lres = lsem.wait(timeout: .now() + 30)
                     teardown()
 
                     if logOk { logUploaded = true }
@@ -427,6 +442,13 @@ final class LimmFullTest {
                     return (logOk, "\(checkinNote) · \(logNote)")
                 }
             }
+        }
+
+        // Итог доставки: упавшие попытки носителя выше — ожидаемый перебор (не красят тест).
+        // Тест валим ТОЛЬКО если лог не доставлен ни через один рабочий профиль.
+        if !workingProfiles.isEmpty && !logUploaded {
+            allOK = false
+            w.appendLine("✗ лог не доставлен ни через один профиль\n")
         }
 
         // Вернуть исходный профиль и автопереключение (перебор мог оставить последний).
