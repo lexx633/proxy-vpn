@@ -171,16 +171,27 @@ class LimmLogReporter {
         catch { completion(false, "tmp write: \(error.localizedDescription)"); return }
         defer { try? FileManager.default.removeItem(atPath: tmp) }
 
+        // gzip бандла: JSON (повторяющиеся лог-строки + дампы netstat/scutil) жмётся ~5–10×,
+        // что резко сокращает выгрузку вверх по туннелю — узкое место заливки лога на RU-ISP.
+        // Сервер распаковывает по заголовку Content-Encoding: gzip. Если gzip не удался —
+        // шлём несжато (тот же /applog принимает оба варианта).
+        let gzPath = tmp + ".gz"
+        let gzipped = self.gzipFile(src: tmp, dst: gzPath)
+        let uploadPath = gzipped ? gzPath : tmp
+        defer { if gzipped { try? FileManager.default.removeItem(atPath: gzPath) } }
+
         func post() -> (Int, String) {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
             let proxyArgs: [String] = socksPort.map { ["--socks5", "127.0.0.1:\($0)"] } ?? ["--noproxy", "*"]
+            var headers = ["-H", "Content-Type: application/json",
+                           "-H", "Authorization: Bearer \(LimmConfig.token)"]
+            if gzipped { headers += ["-H", "Content-Encoding: gzip"] }
             p.arguments = ["--max-time", "18", "--connect-timeout", "10", "-s"]
                         + proxyArgs
-                        + ["-X", "POST",
-                           "-H", "Content-Type: application/json",
-                           "-H", "Authorization: Bearer \(LimmConfig.token)",
-                           "--data-binary", "@\(tmp)",
+                        + ["-X", "POST"]
+                        + headers
+                        + ["--data-binary", "@\(uploadPath)",
                            "-w", "\n%{http_code}",
                            "\(LimmConfig.apiBase)/applog"]
             let out = Pipe(); p.standardOutput = out; p.standardError = Pipe()
@@ -196,6 +207,20 @@ class LimmLogReporter {
         // Two timeouts at 30s each = 60s, exceeding the 55s semaphore window in LimmFullTest.
         if code > 0 && code != 200 { (code, msg) = post() }
         completion(code == 200, "\(code) \(msg)")
+    }
+
+    /// gzip src → dst через /usr/bin/gzip (stdout в файл dst). true при успехе.
+    private func gzipFile(src: String, dst: String) -> Bool {
+        FileManager.default.createFile(atPath: dst, contents: nil)
+        guard let outHandle = FileHandle(forWritingAtPath: dst) else { return false }
+        defer { try? outHandle.close() }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/gzip")
+        p.arguments = ["-c", src]
+        p.standardOutput = outHandle
+        p.standardError  = Pipe()
+        do { try p.run(); p.waitUntilExit() } catch { return false }
+        return p.terminationStatus == 0
     }
 }
 
