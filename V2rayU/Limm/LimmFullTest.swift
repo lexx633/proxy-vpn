@@ -327,6 +327,8 @@ final class LimmFullTest {
         // (L1 ×3 по 5s при ISP-блоке = 15s + L4 + tunnel×3 + services = до 70s),
         // что вешает шаг. Вместо этого — performQuick(): прямой POST без проб, <1s.
         var logUploaded = false   // true когда лог ушёл через рабочий туннель (см. ниже)
+        // Сохраняем лучший профиль для фолбэк-аплоада (см. шаг 5 ниже).
+        var bestFallback: (server: V2rayServer, label: String, isHy2: Bool)? = nil
         // «Лучший» = самый быстрый рабочий профиль (min latency), а НЕ первый по списку — иначе
         // при DE1-first чекин/дашборд шли бы через медленный DE1. Порядок теста (DE1 сверху) на это не влияет.
         let bestIdx = profileResults.enumerated()
@@ -339,6 +341,7 @@ final class LimmFullTest {
             let bestLatency = profileResults[bestIdx].latencyMs   // egress latency из теста
             let bestIsHy2   = LimmAutoSwitch.isHy2Transport(bestLabel) ||
                               LimmAutoSwitch.isHy2Transport(bestServer.name)
+            bestFallback = (bestServer, bestLabel, bestIsHy2)
             w.appendLine("\n")
             step("Чекин (VPN on · \(bestLabel))") {
                 DispatchQueue.main.sync {
@@ -402,19 +405,54 @@ final class LimmFullTest {
             if wasAutoSwitch { LimmAutoSwitch.shared.enable() }
         }
 
-        // 5. Фолбэк-аплоад лога прямым каналом (VPN выкл) — ТОЛЬКО если через туннель не ушёл
-        //    (ни один профиль не ожил, либо tunnel-upload не удался).
+        // 5. Фолбэк-аплоад лога — ТОЛЬКО если через туннель в шаге 4.5 не ушёл.
+        //    Если есть рабочий профиль — поднимаем его снова и шлём через SOCKS (прямой
+        //    RU→Cloudflare путь часто заблокирован, поэтому прямой фолбэк ненадёжен).
+        //    Только если рабочих профилей не было — пробуем напрямую.
         if !logUploaded {
             w.appendLine("\n")
-            step("Отправка лога (фолбэк · прямой)") {
-                let sem = DispatchSemaphore(value: 0)
-                var ok = false; var detail = ""
-                LimmLogReporter.shared.send { success, msg in
-                    ok = success; detail = msg; sem.signal()
+            if let best = bestFallback {
+                step("Отправка лога (фолбэк · VPN · \(best.label))") {
+                    if best.isHy2 {
+                        DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
+                        guard LimmHy2Process.shared.start(transport: best.label) else {
+                            return (false, "hy2 не запустился")
+                        }
+                    } else {
+                        DispatchQueue.main.sync {
+                            UserDefaults.set(forKey: .v2rayCurrentServerName, value: best.server.name)
+                            V2rayLaunch.startV2rayCore()
+                        }
+                    }
+                    let sp = best.isHy2 ? LimmHy2Process.socksPort
+                                        : (UserDefaults.standard.integer(forKey: "localSockPort")).nonzero ?? 1080
+                    guard waitForSocks(port: sp, maxSec: 20) else {
+                        if best.isHy2 { LimmHy2Process.shared.stop() }
+                        else { DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() } }
+                        return (false, "SOCKS не поднялся за 20s")
+                    }
+                    let sem = DispatchSemaphore(value: 0)
+                    var ok = false; var detail = ""
+                    LimmLogReporter.shared.send(socksPort: sp) { success, msg in
+                        ok = success; detail = msg; sem.signal()
+                    }
+                    let res = sem.wait(timeout: .now() + 55)
+                    if best.isHy2 { LimmHy2Process.shared.stop() }
+                    else { DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() } }
+                    if res == .timedOut { return (false, "timeout") }
+                    return (ok, detail)
                 }
-                let res = sem.wait(timeout: .now() + 38)
-                if res == .timedOut { return (false, "timeout") }
-                return (ok, detail)
+            } else {
+                step("Отправка лога (фолбэк · прямой)") {
+                    let sem = DispatchSemaphore(value: 0)
+                    var ok = false; var detail = ""
+                    LimmLogReporter.shared.send { success, msg in
+                        ok = success; detail = msg; sem.signal()
+                    }
+                    let res = sem.wait(timeout: .now() + 38)
+                    if res == .timedOut { return (false, "timeout") }
+                    return (ok, detail)
+                }
             }
         }
 
