@@ -29,7 +29,7 @@ class LimmCheckin {
             return
         }
         // Prevent App Nap from throttling background work (does NOT block system sleep).
-        activity = ProcessInfo.processInfo.beginActivity(.background, reason: "Limm VPN checkin timer")
+        activity = ProcessInfo.processInfo.beginActivity(options: .background, reason: "Limm VPN checkin timer")
         NSLog("[Limm] starting checkin timer (%.0fs)", LimmConfig.checkinInterval)
         runAsync()   // immediate first run
         let t = Timer(timeInterval: LimmConfig.checkinInterval, repeats: true) { _ in self.runAsync() }
