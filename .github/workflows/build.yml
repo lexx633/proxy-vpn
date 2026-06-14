@@ -15,7 +15,7 @@ jobs:
 
     steps:
       # ── Checkout ──────────────────────────────────────────────
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -250,7 +250,7 @@ jobs:
 
       # ── Create GitHub Release ──────────────────────────────────
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name:  v${{ env.VERSION }}-${{ env.SHORT_SHA }}
           name:      "limm VPN ${{ env.VERSION }}"
