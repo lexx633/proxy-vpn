@@ -288,7 +288,9 @@ final class LimmFullTest {
 
                     LimmHy2Process.shared.stop()
                     Thread.sleep(forTimeInterval: 0.5)
-                    return (ok2, detail)
+                    // Показываем реальный egress-latency туннеля (не общее время шага,
+                    // которое включает старт/ожидание SOCKS/teardown ядра).
+                    return (ok2, ok2 ? "\(detail) · \(profileMs ?? 0)ms egress" : detail)
                 } else {
                     // ── Standard xray profile ──────────────────────────────────────
                     DispatchQueue.main.sync {
@@ -310,7 +312,7 @@ final class LimmFullTest {
 
                     DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
                     Thread.sleep(forTimeInterval: 0.5)
-                    return (ok, detail)
+                    return (ok, ok ? "\(detail) · \(profileMs ?? 0)ms egress" : detail)
                 }
             }
             profileResults.append((name: label, ok: profileOk, latencyMs: profileMs))
