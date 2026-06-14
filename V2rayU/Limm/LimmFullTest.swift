@@ -328,20 +328,24 @@ final class LimmFullTest {
         // что вешает шаг. Вместо этого — performQuick(): прямой POST без проб, <1s.
         var logUploaded = false   // true когда лог ушёл через рабочий туннель (см. ниже)
         // Сохраняем лучший профиль для фолбэк-аплоада (см. шаг 5 ниже).
-        var bestFallback: (server: V2rayItem, label: String, isHy2: Bool)? = nil
-        // «Лучший» = самый быстрый рабочий профиль (min latency), а НЕ первый по списку — иначе
-        // при DE1-first чекин/дашборд шли бы через медленный DE1. Порядок теста (DE1 сверху) на это не влияет.
-        let bestIdx = profileResults.enumerated()
-            .filter { $0.element.ok }
-            .min { ($0.element.latencyMs ?? Int.max) < ($1.element.latencyMs ?? Int.max) }?
-            .offset
-        if let bestIdx = bestIdx {
-            let bestServer  = servers[bestIdx]
-            let bestLabel   = bestServer.remark.isEmpty ? bestServer.name : bestServer.remark
-            let bestLatency = profileResults[bestIdx].latencyMs   // egress latency из теста
-            let bestIsHy2   = LimmAutoSwitch.isHy2Transport(bestLabel) ||
-                              LimmAutoSwitch.isHy2Transport(bestServer.name)
-            bestFallback = (bestServer, bestLabel, bestIsHy2)
+        // Все рабочие профили, самый быстрый первым (min latency). «Лучший» (первый) идёт
+        // в финальный чекин/дашборд; весь список — в фолбэк лога: если через один профиль
+        // лог не ушёл, поднимаем следующий, пока не доставим. Порядок теста (DE1 сверху) не влияет.
+        let workingProfiles: [(server: V2rayItem, label: String, isHy2: Bool, latency: Int?)] =
+            profileResults.enumerated()
+                .filter { $0.element.ok }
+                .sorted { ($0.element.latencyMs ?? Int.max) < ($1.element.latencyMs ?? Int.max) }
+                .map { entry in
+                    let s = servers[entry.offset]
+                    let lbl = s.remark.isEmpty ? s.name : s.remark
+                    let isH = LimmAutoSwitch.isHy2Transport(lbl) || LimmAutoSwitch.isHy2Transport(s.name)
+                    return (s, lbl, isH, entry.element.latencyMs)
+                }
+        if let best = workingProfiles.first {
+            let bestServer  = best.server
+            let bestLabel   = best.label
+            let bestLatency = best.latency   // egress latency из теста
+            let bestIsHy2   = best.isHy2
             w.appendLine("\n")
             step("Чекин (VPN on · \(bestLabel))") {
                 DispatchQueue.main.sync {
@@ -411,38 +415,7 @@ final class LimmFullTest {
         //    Только если рабочих профилей не было — пробуем напрямую.
         if !logUploaded {
             w.appendLine("\n")
-            if let best = bestFallback {
-                step("Отправка лога (фолбэк · VPN · \(best.label))") {
-                    if best.isHy2 {
-                        DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
-                        guard LimmHy2Process.shared.start(transport: best.label) else {
-                            return (false, "hy2 не запустился")
-                        }
-                    } else {
-                        DispatchQueue.main.sync {
-                            UserDefaults.set(forKey: .v2rayCurrentServerName, value: best.server.name)
-                            V2rayLaunch.startV2rayCore()
-                        }
-                    }
-                    let sp = best.isHy2 ? LimmHy2Process.socksPort
-                                        : (UserDefaults.standard.integer(forKey: "localSockPort")).nonzero ?? 1080
-                    guard waitForSocks(port: sp, maxSec: 20) else {
-                        if best.isHy2 { LimmHy2Process.shared.stop() }
-                        else { DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() } }
-                        return (false, "SOCKS не поднялся за 20s")
-                    }
-                    let sem = DispatchSemaphore(value: 0)
-                    var ok = false; var detail = ""
-                    LimmLogReporter.shared.send(socksPort: sp) { success, msg in
-                        ok = success; detail = msg; sem.signal()
-                    }
-                    let res = sem.wait(timeout: .now() + 55)
-                    if best.isHy2 { LimmHy2Process.shared.stop() }
-                    else { DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() } }
-                    if res == .timedOut { return (false, "timeout") }
-                    return (ok, detail)
-                }
-            } else {
+            if workingProfiles.isEmpty {
                 step("Отправка лога (фолбэк · прямой)") {
                     let sem = DispatchSemaphore(value: 0)
                     var ok = false; var detail = ""
@@ -452,6 +425,50 @@ final class LimmFullTest {
                     let res = sem.wait(timeout: .now() + 38)
                     if res == .timedOut { return (false, "timeout") }
                     return (ok, detail)
+                }
+            } else {
+                // Перебираем рабочие профили по очереди (быстрый первым): если лог не ушёл
+                // через один — поднимаем следующий, пока не доставим или не кончатся профили.
+                for prof in workingProfiles {
+                    if logUploaded { break }
+                    step("Отправка лога (фолбэк · VPN · \(prof.label))") {
+                        if prof.isHy2 {
+                            DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
+                            guard LimmHy2Process.shared.start(transport: prof.label) else {
+                                return (false, "hy2 не запустился")
+                            }
+                        } else {
+                            DispatchQueue.main.sync {
+                                UserDefaults.set(forKey: .v2rayCurrentServerName, value: prof.server.name)
+                                V2rayLaunch.startV2rayCore()
+                            }
+                        }
+                        let sp = prof.isHy2 ? LimmHy2Process.socksPort
+                                            : (UserDefaults.standard.integer(forKey: "localSockPort")).nonzero ?? 1080
+                        guard waitForSocks(port: sp, maxSec: 20) else {
+                            if prof.isHy2 { LimmHy2Process.shared.stop() }
+                            else { DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() } }
+                            return (false, "SOCKS не поднялся за 20s")
+                        }
+                        let sem = DispatchSemaphore(value: 0)
+                        var ok = false; var detail = ""
+                        LimmLogReporter.shared.send(socksPort: sp) { success, msg in
+                            ok = success; detail = msg; sem.signal()
+                        }
+                        let res = sem.wait(timeout: .now() + 55)
+                        if prof.isHy2 { LimmHy2Process.shared.stop() }
+                        else { DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() } }
+                        if res == .timedOut { return (false, "timeout") }
+                        if ok { logUploaded = true }
+                        return (ok, detail)
+                    }
+                }
+            }
+            // Фолбэк-перебор мог оставить текущим последний пробованный профиль —
+            // вернуть исходный перед финальным рестартом VPN.
+            DispatchQueue.main.sync {
+                if !savedServer.isEmpty {
+                    UserDefaults.set(forKey: .v2rayCurrentServerName, value: savedServer)
                 }
             }
         }
