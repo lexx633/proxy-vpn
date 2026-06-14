@@ -100,10 +100,14 @@ final class LimmHy2Process {
     // MARK: - Internals (must be called on `queue`)
 
     private func _start(transport: String) -> Bool {
-        // Already running same transport — idempotent.
+        // Idempotent only for the SAME transport; otherwise tear down and switch.
         if let p = process, p.isRunning {
-            NSLog("[HY2] already running (transport: %@)", activeTransport ?? "?")
-            return true
+            if activeTransport == transport {
+                NSLog("[HY2] already running same transport (%@)", transport)
+                return true
+            }
+            NSLog("[HY2] switching transport %@ -> %@", activeTransport ?? "?", transport)
+            teardown()
         }
 
         guard let bin = hy2Binary else {
@@ -111,6 +115,11 @@ final class LimmHy2Process {
                   "FR1-hy2/DE1-hy2 requires hysteria2 bundled via CI (hy2-core/).")
             return false
         }
+
+        // A stray hysteria2 (from a crashed run or an untracked process) may still
+        // hold :1088, which makes the new client fail to bind its SOCKS listener
+        // ("SOCKS :1088 не поднялся"). Free the port before launching.
+        freeSocksPort(binary: bin)
 
         // Write YAML config to a temp file.
         let conf    = buildConfig(for: transport)
@@ -165,6 +174,39 @@ final class LimmHy2Process {
             return false
         }
         return true
+    }
+
+    /// True if something is already listening on the local SOCKS port.
+    /// Uses curl --connect-timeout (same proven approach as LimmFullTest).
+    private func socksPortInUse() -> Bool {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+        p.arguments = ["--max-time", "1", "-s", "-o", "/dev/null",
+                       "--connect-timeout", "1", "http://127.0.0.1:\(LimmHy2Process.socksPort)"]
+        p.standardOutput = Pipe(); p.standardError = Pipe()
+        do { try p.run() } catch { return false }
+        p.waitUntilExit()
+        let c = Int(p.terminationStatus)
+        // 0/52/56 => connection established (something is listening)
+        return c == 0 || c == 52 || c == 56
+    }
+
+    /// Kill stray hysteria2 instances launched from our binary and wait until
+    /// the SOCKS port is released (up to 3s).
+    private func freeSocksPort(binary: String) {
+        if !socksPortInUse() { return }
+        NSLog("[HY2] :%d busy — killing stray hysteria2", LimmHy2Process.socksPort)
+        let kill = Process()
+        kill.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        kill.arguments = ["-f", binary]
+        do {
+            try kill.run()
+            kill.waitUntilExit()
+        } catch {
+            NSLog("[HY2] pkill failed: %@", error.localizedDescription)
+        }
+        let deadline = Date().addingTimeInterval(3)
+        while socksPortInUse() && Date() < deadline { Thread.sleep(forTimeInterval: 0.1) }
     }
 
     private func teardown() {

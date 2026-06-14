@@ -439,10 +439,14 @@ class V2raySubSync: NSObject {
 
             print("\(importUri.remark) - \(newUri)")
 
-            if let v2rayOld = V2rayServer.existItem(url: newUri) {
+            // Prefer matching by subscription + remark so a profile whose params
+            // changed (sni/uuid/port) is updated IN PLACE under the same internal
+            // name — preserving the current selection — instead of remove+add.
+            if let v2rayOld = V2rayServer.existItem(subscribe: subscribe, remark: importUri.remark) ?? V2rayServer.existItem(url: newUri) {
                 v2rayOld.json = importUri.json
                 v2rayOld.isValid = importUri.isValid
                 v2rayOld.remark = importUri.remark
+                v2rayOld.url = newUri
                 v2rayOld.store()
                 logTip(title: "success update: ", informativeText: importUri.remark)
                 return v2rayOld

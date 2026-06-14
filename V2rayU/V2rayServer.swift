@@ -314,6 +314,21 @@ class V2rayServer: NSObject {
         }
         return nil
     }
+
+    // find an existing item in a subscription by its remark (profile name).
+    // lets subscription refresh update a profile IN PLACE (keep internal name,
+    // so v2rayCurrentServerName / selection survives) when its uri changes.
+    static func existItem(subscribe: String, remark: String) -> V2rayItem? {
+        if subscribe.count == 0 {
+            return nil
+        }
+        for item in self.v2rayItemList {
+            if item.subscribe == subscribe && item.remark == remark {
+                return item
+            }
+        }
+        return nil
+    }
     
     // get json file url
     static func getJsonFile() -> String? {
