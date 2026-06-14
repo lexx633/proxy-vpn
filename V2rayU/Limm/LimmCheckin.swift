@@ -8,6 +8,7 @@ import Cocoa
 class LimmCheckin {
     static let shared = LimmCheckin()
     private var timer: Timer?
+    private var activity: NSObjectProtocol?
 
     // MARK: - Last L3 result (used by LimmAutoSwitch)
 
@@ -27,16 +28,20 @@ class LimmCheckin {
             NSLog("[Limm] checkin disabled by user")
             return
         }
+        // Prevent App Nap from throttling background work (does NOT block system sleep).
+        activity = ProcessInfo.processInfo.beginActivity(.background, reason: "Limm VPN checkin timer")
         NSLog("[Limm] starting checkin timer (%.0fs)", LimmConfig.checkinInterval)
         runAsync()   // immediate first run
-        timer = Timer.scheduledTimer(withTimeInterval: LimmConfig.checkinInterval, repeats: true) { _ in
-            self.runAsync()
-        }
+        let t = Timer(timeInterval: LimmConfig.checkinInterval, repeats: true) { _ in self.runAsync() }
+        // .common mode fires in all RunLoop modes (default + event tracking) — avoids timer freeze.
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
 
     func stop() {
         timer?.invalidate()
         timer = nil
+        if let a = activity { ProcessInfo.processInfo.endActivity(a); activity = nil }
     }
 
     func runAsync() {
