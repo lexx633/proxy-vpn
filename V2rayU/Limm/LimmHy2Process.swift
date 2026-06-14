@@ -249,6 +249,11 @@ final class LimmHy2Process {
         }
         process = nil
         activeTransport = nil
+        // Wait for the SOCKS port to actually be released so a subsequent hy2
+        // start (e.g. DE1-hy2 -> FR1-hy2 back-to-back) doesn't fail to bind :1088.
+        let deadline = Date().addingTimeInterval(3)
+        while socksPortInUse() && Date() < deadline { Thread.sleep(forTimeInterval: 0.15) }
+        if socksPortInUse() { killByPort(LimmHy2Process.socksPort) }
         NSLog("[HY2] stopped")
     }
 }

@@ -329,15 +329,26 @@ final class LimmFullTest {
         // performQuick() (не perform()) — прямой POST без curl-проб, <1s, не вешает шаг.
         var logUploaded = false
         var checkinDone = false
+        // Кандидаты-носители для чекина+лога. Приоритет НЕ по чистой скорости:
+        //   1) xray раньше hy2 — hy2 рвёт длинную заливку лога (sustained upload);
+        //   2) НЕ-DE1 раньше DE1 — limm.space живёт на DE1, заливка через DE1-туннель
+        //      деградирует/хайрпинит (короткий чекин проходит, длинный лог — нет);
+        //   3) затем по latency.
+        // Перебираем по очереди, пока лог не доставлен → обычно уходит с 1-й попытки (FR1).
         let workingProfiles: [(server: V2rayItem, label: String, isHy2: Bool, latency: Int?)] =
             profileResults.enumerated()
                 .filter { $0.element.ok }
-                .sorted { ($0.element.latencyMs ?? Int.max) < ($1.element.latencyMs ?? Int.max) }
-                .map { entry in
+                .map { entry -> (server: V2rayItem, label: String, isHy2: Bool, latency: Int?) in
                     let s = servers[entry.offset]
                     let lbl = s.remark.isEmpty ? s.name : s.remark
                     let isH = LimmAutoSwitch.isHy2Transport(lbl) || LimmAutoSwitch.isHy2Transport(s.name)
                     return (s, lbl, isH, entry.element.latencyMs)
+                }
+                .sorted { a, b in
+                    if a.isHy2 != b.isHy2 { return !a.isHy2 }
+                    let aDE1 = isDe1(a.server), bDE1 = isDe1(b.server)
+                    if aDE1 != bDE1 { return !aDE1 }
+                    return (a.latency ?? Int.max) < (b.latency ?? Int.max)
                 }
 
         w.appendLine("\n")
