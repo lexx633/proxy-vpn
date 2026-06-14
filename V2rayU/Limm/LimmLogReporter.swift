@@ -175,7 +175,7 @@ class LimmLogReporter {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
             let proxyArgs: [String] = socksPort.map { ["--socks5", "127.0.0.1:\($0)"] } ?? ["--noproxy", "*"]
-            p.arguments = ["--max-time", "30", "--connect-timeout", "10", "-s"]
+            p.arguments = ["--max-time", "18", "--connect-timeout", "10", "-s"]
                         + proxyArgs
                         + ["-X", "POST",
                            "-H", "Content-Type: application/json",
