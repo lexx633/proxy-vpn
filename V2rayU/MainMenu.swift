@@ -144,8 +144,12 @@ class MenuController: NSObject, NSMenuDelegate {
 
     func setStatusOn(mode: RunMode) {
         DispatchQueue.main.async {
-            let profile = UserDefaults.get(forKey: .v2rayCurrentServerName) ?? ""
-            let statusTitle = profile.isEmpty ? "limm VPN: On" : "limm VPN: On - \(profile)"
+            // v2rayCurrentServerName хранит внутреннее имя (config.UUID) — резолвим в
+            // remark (короткий label вроде FR1-vl), иначе в меню висит длинный UUID.
+            let name = UserDefaults.get(forKey: .v2rayCurrentServerName) ?? ""
+            let item = V2rayServer.list().first { $0.name == name }
+            let label = item.map { $0.remark.isEmpty ? $0.name : $0.remark } ?? ""
+            let statusTitle = label.isEmpty ? "limm VPN: On" : "limm VPN: On - \(label)"
             self.v2rayStatusItem.title = statusTitle
             self.toggleV2rayItem.title = "Turn Off"
             self.setModeIcon(mode: mode)
