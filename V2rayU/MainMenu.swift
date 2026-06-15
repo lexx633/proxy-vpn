@@ -46,6 +46,13 @@ class MenuController: NSObject, NSMenuDelegate {
     }()
     private lazy var sendLogSeparator = NSMenuItem.separator()
 
+    // Server name label — shown below "limm VPN: On" to keep the menu narrow
+    private lazy var serverLabelItem: NSMenuItem = {
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        return item
+    }()
+
     // "Full Test..." — пошаговая диагностика, всегда доступна
     private lazy var fullTestMenuItem: NSMenuItem = {
         let item = NSMenuItem(title: "Full Test...",
@@ -111,8 +118,9 @@ class MenuController: NSObject, NSMenuDelegate {
     private func rebuildMenu() {
         statusMenu.removeAllItems()
 
-        // 1. Status label
+        // 1. Status label + server name (two separate items to keep menu narrow)
         statusMenu.addItem(v2rayStatusItem)
+        statusMenu.addItem(serverLabelItem)
         // 2. Toggle
         statusMenu.addItem(toggleV2rayItem)
         // 3. Preferences
@@ -134,6 +142,8 @@ class MenuController: NSObject, NSMenuDelegate {
     func setStatusOff() {
         DispatchQueue.main.async {
             self.v2rayStatusItem.title = "limm VPN: Off"
+            self.serverLabelItem.title = ""
+            self.serverLabelItem.isHidden = true
             self.toggleV2rayItem.title = "VPN On"
             if let button = self.statusItem.button {
                 button.image = NSImage(named: NSImage.Name("IconOff"))
@@ -149,8 +159,9 @@ class MenuController: NSObject, NSMenuDelegate {
             let name = UserDefaults.get(forKey: .v2rayCurrentServerName) ?? ""
             let item = V2rayServer.list().first { $0.name == name }
             let label = item.map { $0.remark.isEmpty ? $0.name : $0.remark } ?? ""
-            let statusTitle = label.isEmpty ? "limm VPN: On" : "limm VPN: On - \(label)"
-            self.v2rayStatusItem.title = statusTitle
+            self.v2rayStatusItem.title = "limm VPN: On"
+            self.serverLabelItem.title = "  \(label)"
+            self.serverLabelItem.isHidden = label.isEmpty
             self.toggleV2rayItem.title = "Turn Off"
             self.setModeIcon(mode: mode)
             UserDefaults.setBool(forKey: .v2rayTurnOn, value: true)
