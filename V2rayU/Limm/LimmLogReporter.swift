@@ -6,6 +6,11 @@ import Foundation
 class LimmLogReporter {
     static let shared = LimmLogReporter()
 
+    /// Full Test results cached by LimmFullTest after each run.
+    /// When set, collectBundle() skips heavyweight probe() to avoid blocking for 16s
+    /// before the upload even starts — which causes "лог timeout" on slow tunnels.
+    var cachedDiagResults: [[String: Any]]? = nil
+
     // MARK: - Entry point
 
     /// - Parameter socksPort: when set, the probe AND the upload ride the working tunnel
@@ -32,8 +37,15 @@ class LimmLogReporter {
             "ts":           ISO8601DateFormatter().string(from: Date()),
         ]
 
-        // --- Live probe ---
-        bundle["probe"] = collectProbe(socks: socks)
+        // Skip heavyweight probe when Full Test results are already cached —
+        // collectProbe() blocks up to 16s (directOk×2 + ipify + parallel services),
+        // leaving <14s of the 30s window for the actual upload → timeout.
+        if let diag = cachedDiagResults {
+            bundle["probe"] = ["skipped": "diag_results_present"]
+            bundle["diag_results"] = diag
+        } else {
+            bundle["probe"] = collectProbe(socks: socks)
+        }
 
         // --- System network ---
         bundle["system_net"] = collectSystemNet()

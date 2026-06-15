@@ -334,6 +334,13 @@ final class LimmFullTest {
         // 4. Загружаем результаты профилей на сервер ─────────────────
         postFullTestResults(profileResults)
 
+        // Cache for LimmLogReporter — skip heavyweight probe() in collectBundle().
+        LimmLogReporter.shared.cachedDiagResults = profileResults.map {
+            var d: [String: Any] = ["name": $0.name, "ok": $0.ok ? 1 : 0]
+            if let ms = $0.latencyMs { d["latency_ms"] = ms }
+            return d
+        }
+
         // 4.5 + 5 (объединено). Финальный чекин (заполняет Статус/Сервисы/Пинг на дашборде)
         // И отправка лога идут через рабочий VPN-туннель — прямой RU→Cloudflare путь флапает.
         // Перебираем рабочие профили по возрастанию latency: на каждом поднимаем туннель,
@@ -431,9 +438,10 @@ final class LimmFullTest {
                     LimmLogReporter.shared.send(socksPort: sp) { ok, msg in
                         logOk = ok; logDetail = msg; lsem.signal()
                     }
-                    // Успешная заливка лога занимает ~20s; 30s = запас. Раньше 55s →
-                    // дохлый носитель съедал ~65s, перебор до рабочего тянулся минуты.
-                    let lres = lsem.wait(timeout: .now() + 30)
+                    // Без probe() collectBundle занимает <3s, curl --max-time 18 = 21s total.
+                    // 45s — запас на gzip + медленный туннель. Раньше 30s → probe()
+                    // блокировал до 16s → оставалось 14s на curl 18s → timeout.
+                    let lres = lsem.wait(timeout: .now() + 45)
                     teardown()
 
                     if logOk { logUploaded = true }
