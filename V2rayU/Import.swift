@@ -357,7 +357,7 @@ class ImportUri {
         }
 
         // kcp
-        v2ray.streamKcp.header.type = vmess.headerType
+        if !vmess.headerType.isEmpty { v2ray.streamKcp.header.type = vmess.headerType }
         v2ray.streamKcp.seed = vmess.kcpSeed
 
         // h2
@@ -376,8 +376,11 @@ class ImportUri {
         v2ray.streamXhttp.path = vmess.path
         v2ray.streamXhttp.mode = vmess.grpcMode  // URI uses "mode" param for both grpc and xhttp
 
-        // tcp
-        v2ray.streamTcp.header.type = vmess.headerType
+        // tcp: only override header type if explicitly set in URI; otherwise keep the default "none".
+        // An empty headerType would serialize to {"type":""} which xray 26.x rejects at config load.
+        if !vmess.headerType.isEmpty {
+            v2ray.streamTcp.header.type = vmess.headerType
+        }
         if v2ray.streamNetwork == "tcp" && v2ray.streamTcp.header.type == "http" {
             var tcpReq = TcpSettingHeaderRequest()
             tcpReq.path = [vmess.path]
@@ -386,7 +389,7 @@ class ImportUri {
         }
 
         // quic
-        v2ray.streamQuic.header.type = vmess.headerType
+        if !vmess.headerType.isEmpty { v2ray.streamQuic.header.type = vmess.headerType }
 
         print("importVless-v2ray",v2ray.streamKcp,v2ray.streamKcp.seed)
         
