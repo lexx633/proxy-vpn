@@ -15,13 +15,14 @@ enum LimmConfig {
     // first, then Cloudflare. An ISP may block one path while the other stays reachable, so
     // the version-check and the .dmg download try both. www.limm.space bypasses CF; both
     // serve identical /vpn/* on RU1.
-    static let updateHosts = ["www.limm.space", "limm.space"]
+    static let updateHosts = ["www.limm.space", "vpn.limm.space", "limm.space"]
+    private static let mirrorHostSet: Set<String> = ["limm.space", "www.limm.space", "vpn.limm.space"]
 
-    /// Mirrors a limm.space / www.limm.space URL across both hosts (direct www first).
-    /// Non-limm or unparseable URLs are returned unchanged.
+    /// Mirrors a limm download URL across all hosts (direct www first, then vpn+CF, then
+    /// bare limm+CF). Non-limm or unparseable URLs are returned unchanged.
     static func mirrorURLs(_ url: String) -> [String] {
         guard let comps = URLComponents(string: url), let host = comps.host,
-              host == "limm.space" || host == "www.limm.space" else { return [url] }
+              mirrorHostSet.contains(host) else { return [url] }
         return updateHosts.compactMap { h -> String? in
             var c = comps
             c.host = h
