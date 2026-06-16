@@ -309,26 +309,38 @@ class V2raySubSync: NSObject {
     }
     
     public func dlFromUrl(url: String, subscribe: String) async throws {
-        logTip(title: "loading from : ", uri: "", informativeText: url + "\n\n")
-
-        guard let reqUrl = URL(string: url) else {
-            logTip(title: "loading from : ", uri: "", informativeText: "url is not valid: " + url + "\n\n")
-            return
-        }
-        
-        // url request with proxy
+        // Try each mirror (www direct → vpn Bunny → limm CF) until one returns a VALID sub.
+        // For limm hosts LimmConfig.mirrorURLs returns all three; for any other subscription
+        // it returns [url] unchanged, so generic subs keep the original single-fetch behaviour.
+        let candidates = LimmConfig.mirrorURLs(url)
+        let strict = candidates.count > 1   // only limm hosts get the block-page guard
         let session = URLSession(configuration: getProxyUrlSessionConfigure())
-        do {
-            let (data, _) = try await session.data(for: URLRequest(url: reqUrl))
-            if let outputStr = String(data: data, encoding: String.Encoding.utf8) {
-                self.handle(base64Str: outputStr, subscribe: subscribe, url: url)
-            } else {
-                self.logTip(title: "loading fail: ", uri: url, informativeText: "data is nil")
+
+        for cand in candidates {
+            logTip(title: "loading from : ", uri: "", informativeText: cand + "\n\n")
+            guard let reqUrl = URL(string: cand) else { continue }
+            do {
+                var req = URLRequest(url: reqUrl)
+                req.timeoutInterval = 8
+                let (data, resp) = try await session.data(for: req)
+                let code = (resp as? HTTPURLResponse)?.statusCode ?? 200
+                guard code == 200, let outputStr = String(data: data, encoding: .utf8) else {
+                    self.logTip(title: "mirror failed: ", uri: cand, informativeText: "http \(code)")
+                    continue
+                }
+                if strict && !LimmConfig.isValidSub(outputStr) {
+                    // Likely a provider block-page on a censored path — skip, keep current servers.
+                    self.logTip(title: "mirror invalid (block-page?): ", uri: cand, informativeText: "")
+                    continue
+                }
+                self.handle(base64Str: outputStr, subscribe: subscribe, url: cand)
+                return   // first valid mirror wins
+            } catch let error {
+                NSLog("sub mirror \(cand) failed: \(error)")
+                continue
             }
-        } catch let error {
-            // failed to write file – bad permissions, bad filename, missing permissions, or more likely it can't be converted to the encoding
-            NSLog("save json file fail: \(error)")
         }
+        self.logTip(title: "sub fetch failed (all mirrors): ", uri: url, informativeText: "keeping current servers\n\n")
     }
 
     func handle(base64Str: String, subscribe: String, url: String) {

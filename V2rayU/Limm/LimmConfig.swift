@@ -18,8 +18,8 @@ enum LimmConfig {
     static let updateHosts = ["www.limm.space", "vpn.limm.space", "limm.space"]
     private static let mirrorHostSet: Set<String> = ["limm.space", "www.limm.space", "vpn.limm.space"]
 
-    /// Mirrors a limm download URL across all hosts (direct www first, then vpn+CF, then
-    /// bare limm+CF). Non-limm or unparseable URLs are returned unchanged.
+    /// Mirrors a limm download URL across all hosts (direct www first, then vpn via Bunny CDN,
+    /// then bare limm via Cloudflare). Non-limm or unparseable URLs are returned unchanged.
     static func mirrorURLs(_ url: String) -> [String] {
         guard let comps = URLComponents(string: url), let host = comps.host,
               mirrorHostSet.contains(host) else { return [url] }
@@ -30,8 +30,36 @@ enum LimmConfig {
         }
     }
 
-    /// Version-check endpoint mirrored across both hosts (direct www first).
+    /// Version-check endpoint mirrored across all hosts (direct www first).
     static var releasesURLs: [String] { mirrorURLs(releasesURL) }
+
+    /// Subscription endpoint mirrored across all hosts (direct www first, then vpn+Bunny,
+    /// then bare limm+CF). A blocked CF edge no longer stops the server list from refreshing.
+    static var subURLs: [String] { mirrorURLs(subURL) }
+
+    /// True if a /vpn/sub response body is a real subscription, not a provider block-page
+    /// served with HTTP 200. Accepts base64 (the normal form) or already-decoded bodies.
+    /// Rejecting a bad body is critical — importing it would wipe working servers.
+    static func isValidSub(_ body: String) -> Bool {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.count < 8 { return false }
+        let lower = trimmed.lowercased()
+        if lower.contains("<html") || lower.contains("<!doctype") || lower.contains("<body") {
+            return false
+        }
+        func hasScheme(_ s: String) -> Bool {
+            return s.contains("vless://") || s.contains("vmess://") ||
+                   s.contains("hysteria2://") || s.contains("hy2://") || s.contains("trojan://")
+        }
+        if hasScheme(trimmed) { return true }
+        let compact = trimmed.replacingOccurrences(of: "\n", with: "")
+                             .replacingOccurrences(of: "\r", with: "")
+        if let data = Data(base64Encoded: compact),
+           let decoded = String(data: data, encoding: .utf8), hasScheme(decoded) {
+            return true
+        }
+        return false
+    }
 
     // Checkin
     static let checkinInterval: TimeInterval = 900   // 15 min
