@@ -27,7 +27,16 @@ class LimmUpdater {
     }
 
     func checkForUpdates(silent: Bool = false) {
-        guard let url = URL(string: LimmConfig.releasesURL) else { return }
+        // Try each mirror (direct www first, then CF) until one returns a decodable release.
+        fetchRelease(LimmConfig.releasesURLs, index: 0, silent: silent)
+    }
+
+    /// Recursively tries the mirror list; on failure falls through to the next host.
+    private func fetchRelease(_ urls: [String], index: Int, silent: Bool) {
+        guard index < urls.count, let url = URL(string: urls[index]) else {
+            if !silent { self.showError("Не удалось проверить обновления") }
+            return
+        }
         var req = URLRequest(url: url)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.timeoutInterval = 15
@@ -44,7 +53,8 @@ class LimmUpdater {
                   (resp as? HTTPURLResponse)?.statusCode == 200,
                   let release = try? JSONDecoder().decode(LimmRelease.self, from: data)
             else {
-                if !silent { self.showError("Не удалось проверить обновления") }
+                // This mirror failed — try the next one (e.g. CF blocked → fall back to www).
+                self.fetchRelease(urls, index: index + 1, silent: silent)
                 return
             }
             let latest = release.tag_name.hasPrefix("v") ? String(release.tag_name.dropFirst())
@@ -84,10 +94,33 @@ class LimmUpdater {
         alert.addButton(withTitle: "Скачать")
         alert.addButton(withTitle: "Позже")
         if alert.runModal() == .alertFirstButtonReturn {
-            if let url = URL(string: downloadURL) {
-                NSWorkspace.shared.open(url)
-            }
+            openFirstReachable(LimmConfig.mirrorURLs(downloadURL))
         }
+    }
+
+    /// Opens the first reachable mirror (direct www first, then CF). Probes each with a short
+    /// HEAD so a CF-blocked host doesn't dump the user onto a dead download; opens the first
+    /// candidate as a last resort if none probe OK.
+    private func openFirstReachable(_ urls: [String], index: Int = 0) {
+        guard index < urls.count, let url = URL(string: urls[index]) else {
+            if let first = urls.first, let u = URL(string: first) { NSWorkspace.shared.open(u) }
+            return
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "HEAD"
+        req.timeoutInterval = 6
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.connectionProxyDictionary = [:]
+        let session = URLSession(configuration: cfg)
+        session.dataTask(with: req) { _, resp, err in
+            defer { session.finishTasksAndInvalidate() }
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            if err == nil, (200..<400).contains(code) {
+                DispatchQueue.main.async { NSWorkspace.shared.open(url) }
+            } else {
+                self.openFirstReachable(urls, index: index + 1)
+            }
+        }.resume()
     }
 
     private func showUpToDate() {

@@ -11,6 +11,27 @@ enum LimmConfig {
     // Hiddify fork (vpn-mac) uses /vpn/mac/latest. Do NOT mix them up.
     static let releasesURL  = "https://limm.space/vpn/proxy-mac/latest"
 
+    // Update/download mirrors in priority order: direct origin (www, grey-cloud → RU1 IP)
+    // first, then Cloudflare. An ISP may block one path while the other stays reachable, so
+    // the version-check and the .dmg download try both. www.limm.space bypasses CF; both
+    // serve identical /vpn/* on RU1.
+    static let updateHosts = ["www.limm.space", "limm.space"]
+
+    /// Mirrors a limm.space / www.limm.space URL across both hosts (direct www first).
+    /// Non-limm or unparseable URLs are returned unchanged.
+    static func mirrorURLs(_ url: String) -> [String] {
+        guard let comps = URLComponents(string: url), let host = comps.host,
+              host == "limm.space" || host == "www.limm.space" else { return [url] }
+        return updateHosts.compactMap { h -> String? in
+            var c = comps
+            c.host = h
+            return c.string
+        }
+    }
+
+    /// Version-check endpoint mirrored across both hosts (direct www first).
+    static var releasesURLs: [String] { mirrorURLs(releasesURL) }
+
     // Checkin
     static let checkinInterval: TimeInterval = 900   // 15 min
     static let clientKind   = "macos"
