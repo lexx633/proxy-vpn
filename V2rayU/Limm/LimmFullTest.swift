@@ -159,13 +159,16 @@ final class LimmFullTest {
 
     // MARK: - Fulltest results upload
 
-    private func postFullTestResults(_ profiles: [(name: String, ok: Bool, latencyMs: Int?)]) {
+    private func postFullTestResults(_ profiles: [(name: String, ok: Bool, latencyMs: Int?, egressIp: String?, browserOk: Bool)]) {
         guard !profiles.isEmpty else { return }
         let token = LimmConfig.token
         guard !token.isEmpty, token != "__LIMM_TOKEN__" else { return }
+        // §7.7 контракт payload: egress_ip + browser_ok у каждого профиля (как Android).
         let profilesArr = profiles.map { p -> [String: Any] in
-            var d: [String: Any] = ["name": p.name, "ok": p.ok ? 1 : 0]
+            var d: [String: Any] = ["name": p.name, "ok": p.ok ? 1 : 0,
+                                    "browser_ok": p.browserOk ? 1 : 0]
             if let ms = p.latencyMs { d["latency_ms"] = ms }
+            if let ip = p.egressIp { d["egress_ip"] = ip }
             return d
         }
         let payload: [String: Any] = [
@@ -263,13 +266,15 @@ final class LimmFullTest {
 
         w.appendLine("\n── Профили (\(servers.count)) ──\n\n")
 
-        var profileResults: [(name: String, ok: Bool, latencyMs: Int?)] = []
+        var profileResults: [(name: String, ok: Bool, latencyMs: Int?, egressIp: String?, browserOk: Bool)] = []
 
         for server in servers {
             let label = server.remark.isEmpty ? server.name : server.remark
             let isHy2 = LimmAutoSwitch.isHy2Transport(label) || LimmAutoSwitch.isHy2Transport(server.name)
             var profileOk = false
             var profileMs: Int? = nil
+            var profileEgress: String? = nil
+            var profileBrowser = false
 
             stepCompact(label) {
                 if isHy2 {
@@ -296,14 +301,14 @@ final class LimmFullTest {
                     }
 
                     let t0 = Date()
-                    let (ok2, detail) = testEgressIP(socksPortOverride: hy2Port)
-                    if ok2 { profileMs = Int(Date().timeIntervalSince(t0) * 1000) }
-                    profileOk = ok2
+                    let r = probeProfile(port: hy2Port, label: label)
+                    if r.ok { profileMs = Int(Date().timeIntervalSince(t0) * 1000) }
+                    profileOk = r.ok; profileEgress = r.egressIp; profileBrowser = r.browserOk
 
                     LimmHy2Process.shared.stop()
                     Thread.sleep(forTimeInterval: 0.5)
                     // Реальный egress-latency туннеля (не общее время шага со стартом ядра).
-                    return (ok2, ok2 ? "✓ \(profileMs ?? 0)ms" : detail)
+                    return (r.ok, r.ok ? "✓ \(profileMs ?? 0)ms · \(r.detail)" : r.detail)
                 } else {
                     // ── Standard xray profile ──────────────────────────────────────
                     DispatchQueue.main.sync {
@@ -319,16 +324,17 @@ final class LimmFullTest {
                     }
 
                     let t0 = Date()
-                    let (ok, detail) = testEgressIP()
-                    if ok { profileMs = Int(Date().timeIntervalSince(t0) * 1000) }
-                    profileOk = ok
+                    let r = probeProfile(port: port, label: label)
+                    if r.ok { profileMs = Int(Date().timeIntervalSince(t0) * 1000) }
+                    profileOk = r.ok; profileEgress = r.egressIp; profileBrowser = r.browserOk
 
                     DispatchQueue.main.sync { V2rayLaunch.stopV2rayCore() }
                     Thread.sleep(forTimeInterval: 0.5)
-                    return (ok, ok ? "✓ \(profileMs ?? 0)ms" : detail)
+                    return (r.ok, r.ok ? "✓ \(profileMs ?? 0)ms · \(r.detail)" : r.detail)
                 }
             }
-            profileResults.append((name: label, ok: profileOk, latencyMs: profileMs))
+            profileResults.append((name: label, ok: profileOk, latencyMs: profileMs,
+                                   egressIp: profileEgress, browserOk: profileBrowser))
         }
 
         // 4. Загружаем результаты профилей на сервер ─────────────────
@@ -336,8 +342,10 @@ final class LimmFullTest {
 
         // Cache for LimmLogReporter — skip heavyweight probe() in collectBundle().
         LimmLogReporter.shared.cachedDiagResults = profileResults.map {
-            var d: [String: Any] = ["name": $0.name, "ok": $0.ok ? 1 : 0]
+            var d: [String: Any] = ["name": $0.name, "ok": $0.ok ? 1 : 0,
+                                    "browser_ok": $0.browserOk ? 1 : 0]
             if let ms = $0.latencyMs { d["latency_ms"] = ms }
+            if let ip = $0.egressIp { d["egress_ip"] = ip }
             return d
         }
 
@@ -486,51 +494,109 @@ final class LimmFullTest {
         }
     }
 
-    // MARK: - IP probe through SOCKS
+    // MARK: - Profile probe through SOCKS (§7 контракт)
 
-    /// XHTTP может вернуть пустой ответ на первый запрос (~15s timeout) — делаем до 3 попыток.
-    private let egressRetryMax = 3
+    /// §7.5: бюджет egress по типу транспорта. Успех прерывает ретраи (платит только падающий).
+    private func egressBudget(label: String) -> (timeout: Int, retries: Int) {
+        let l = label.lowercased()
+        if l.contains("xhttp") { return (8, 3) }                 // XHTTP: медленный первый ответ
+        if LimmAutoSwitch.isHy2Transport(label) { return (6, 2) } // hy2/tuic (UDP)
+        return (5, 2)                                            // REALITY/ws/cf-ws/relay (TCP)
+    }
 
-    /// - Parameter socksPortOverride: if set, uses this port instead of reading UserDefaults.
-    ///   Pass `LimmHy2Process.socksPort` (1088) for hy2 profiles.
-    private func testEgressIP(socksPortOverride: Int? = nil) -> (Bool, String) {
-        let port = UserDefaults.standard.integer(forKey: "localSockPort")
-        let socksPort = socksPortOverride ?? (port > 0 ? port : 1080)
+    /// Полная проба профиля: egress (§7.3/7.4) + browsing-liveness L4 (§7.2/F2.2).
+    /// `ok = egress != null` — любой egress = туннель несёт трафик (не сверяем с IP ноды).
+    private func probeProfile(port: Int, label: String) -> (ok: Bool, egressIp: String?, browserOk: Bool, detail: String) {
+        let b = egressBudget(label: label)
+        guard let ip = egressViaSocks(port: port, timeout: b.timeout, retries: b.retries) else {
+            return (false, nil, false, "нет egress (/api/myip+ipify, \(b.retries)×\(b.timeout)s)")
+        }
+        // +1 быстрый запрос только на живых профилях: «egress-точка жива» vs «browsing работает».
+        let browser = probe204(port: port)
+        return (true, ip, browser, "\(ip) · \(browser ? "204✓" : "204✗")")
+    }
 
-        for attempt in 1...egressRetryMax {
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-            // 20s per attempt: XHTTP may delay first response up to ~15s.
-            proc.arguments = [
-                "--max-time", "20", "-s",
-                "--socks5", "127.0.0.1:\(socksPort)",
-                "https://api.ipify.org",
-            ]
-            let outPipe = Pipe()
-            proc.standardOutput = outPipe
-            proc.standardError  = Pipe()
-
-            do {
-                try proc.run()
-                proc.waitUntilExit()
-                let raw = outPipe.fileHandleForReading.readDataToEndOfFile()
-                let ip  = (String(data: raw, encoding: .utf8) ?? "")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if !ip.isEmpty {
-                    let isVPN = LimmConfig.isOurEgress(ip)
-                    let tag   = isVPN ? "VPN ✓" : "не VPN ✗"
-                    return (isVPN, tag)
-                }
-            } catch {
-                return (false, error.localizedDescription)
-            }
-
-            if attempt < egressRetryMax {
-                NSLog("[Limm] testEgressIP: attempt %d/%d empty, retrying", attempt, egressRetryMax)
-                Thread.sleep(forTimeInterval: 0.5)
+    /// §7.3: egress через SOCKS. Свой `/api/myip` (3 зеркала www→vpn→limm) первым,
+    /// `api.ipify.org` — фолбэк. Снимает зависимость от ipify (главный источник ложных
+    /// негативов). Возвращает IP или nil.
+    private func egressViaSocks(port: Int, timeout: Int, retries: Int) -> String? {
+        let mirrors = LimmConfig.mirrorURLs("https://www.limm.space/api/myip")
+        // /api/myip: www первым с ретраями (XHTTP холодный старт), прочие зеркала — по разу.
+        for (i, ep) in mirrors.enumerated() {
+            let tries = (i == 0) ? retries : 1
+            for attempt in 1...tries {
+                if let body = curlBody(url: ep, socksPort: port, timeout: timeout),
+                   let ip = parseMyip(body), isUsableEgress(ip) { return ip }
+                if attempt < tries { Thread.sleep(forTimeInterval: 0.5) }
             }
         }
-        return (false, "нет ответа от api.ipify.org (\(egressRetryMax) попытки)")
+        // Фолбэк: api.ipify.org (тело — голый IP).
+        for attempt in 1...retries {
+            if let body = curlBody(url: "https://api.ipify.org", socksPort: port, timeout: timeout) {
+                let ip = body.trimmingCharacters(in: .whitespacesAndNewlines)
+                if isUsableEgress(ip) { return ip }
+            }
+            if attempt < retries { Thread.sleep(forTimeInterval: 0.5) }
+        }
+        return nil
+    }
+
+    /// Парсит `{"ip":"..."}` от /api/myip.
+    private func parseMyip(_ body: String) -> String? {
+        guard let data = body.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let ip = obj["ip"] as? String else { return nil }
+        let t = ip.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
+    }
+
+    /// Реальный egress не может быть loopback/private — если зеркало (напр. прямой www,
+    /// где nginx ещё не прокидывает реальный IP) вернуло `127.0.0.1`/`10.*`/`192.168.*`,
+    /// считаем невалидным и переходим к следующему зеркалу (CF/Bunny дадут настоящий IP).
+    private func isUsableEgress(_ ip: String) -> Bool {
+        if ip.isEmpty { return false }
+        if ip.hasPrefix("127.") || ip == "::1" || ip.hasPrefix("10.")
+            || ip.hasPrefix("192.168.") || ip.hasPrefix("169.254.") { return false }
+        if ip.hasPrefix("172.") {
+            let parts = ip.split(separator: ".")
+            if parts.count > 1, let o2 = Int(parts[1]), (16...31).contains(o2) { return false }
+        }
+        return true
+    }
+
+    /// curl GET через SOCKS, тело ответа строкой (nil при ошибке запуска/пустом теле).
+    private func curlBody(url: String, socksPort: Int, timeout: Int) -> String? {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+        proc.arguments = ["--max-time", "\(timeout)", "-s",
+                          "--socks5", "127.0.0.1:\(socksPort)", url]
+        let outPipe = Pipe()
+        proc.standardOutput = outPipe
+        proc.standardError  = Pipe()
+        do { try proc.run() } catch { return nil }
+        proc.waitUntilExit()
+        let raw = outPipe.fileHandleForReading.readDataToEndOfFile()
+        let s = String(data: raw, encoding: .utf8)
+        return (s?.isEmpty == false) ? s : nil
+    }
+
+    /// §7.2 L4: реальный browsing работает (не только egress-точка жива).
+    /// Один лёгкий `generate_204` через тот же SOCKS, 1 попытка.
+    private func probe204(port: Int, timeout: Int = 5) -> Bool {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+        proc.arguments = ["--max-time", "\(timeout)", "-s", "-o", "/dev/null",
+                          "-w", "%{http_code}",
+                          "--socks5", "127.0.0.1:\(port)",
+                          "https://www.gstatic.com/generate_204"]
+        let outPipe = Pipe()
+        proc.standardOutput = outPipe
+        proc.standardError  = Pipe()
+        do { try proc.run() } catch { return false }
+        proc.waitUntilExit()
+        let code = (String(data: outPipe.fileHandleForReading.readDataToEndOfFile(),
+                           encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return code == "204"
     }
 
     // MARK: - Helpers
