@@ -174,6 +174,19 @@ class LimmAutoSwitch {
     /// instead of xray (which does not support the hysteria2 protocol).
     static func isHy2Transport(_ name: String) -> Bool { name.hasSuffix("-hy2") }
 
+    /// Resolve the hy2 transport tag for a server identified by its internal name.
+    /// Subscription profiles keep the "…-hy2" label in `remark` while the internal
+    /// `name` is a generated id — so a name-only suffix check misses them and the
+    /// profile gets routed into xray, which has no hysteria2 protocol and dies with
+    /// "unknown config id: hysteria2". Returns the tag to feed LimmHy2Process /
+    /// startHy2Relay (it picks DE1/FR1 by substring, so the remark is required), or
+    /// nil if this isn't a hy2 profile.
+    static func hy2Tag(forName name: String) -> String? {
+        if isHy2Transport(name) { return name }
+        if let item = V2rayServer.load(name: name), isHy2Transport(item.remark) { return item.remark }
+        return nil
+    }
+
     func doSwitch(to name: String) {
         lastSwitchDate = Date()
         let curName    = UserDefaults.get(forKey: .v2rayCurrentServerName) ?? ""
@@ -200,12 +213,13 @@ class LimmAutoSwitch {
                 return
             }
 
-            if LimmAutoSwitch.isHy2Transport(name) {
+            if let hy2tag = LimmAutoSwitch.hy2Tag(forName: name) {
                 // → switching TO Hysteria2: bring up hy2 + point xray at it as a
                 //   relay so the fixed local SOCKS port (:1080) flows through it.
                 //   startHy2Relay() handles AWG teardown and hy2 (re)start.
-                NSLog("[AutoSwitch] entering HY2 transport: %@", name)
-                V2rayLaunch.startHy2Relay(transport: name)
+                //   Pass the remark-based tag so buildConfig picks the right node.
+                NSLog("[AutoSwitch] entering HY2 transport: %@ (tag %@)", name, hy2tag)
+                V2rayLaunch.startHy2Relay(transport: hy2tag)
                 LimmAutoSwitch.sendSwitchEvent(to: name)
                 return
             }

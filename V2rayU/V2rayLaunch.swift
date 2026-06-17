@@ -279,8 +279,14 @@ class V2rayLaunch: NSObject {
         // limm: hysteria2 profiles are not xray configs — bring up hy2 + xray relay
         // so the fixed local SOCKS port keeps serving traffic. Covers launch, wake,
         // auto-connect and the on/off toggle, not just the menu switch.
-        if LimmAutoSwitch.isHy2Transport(v2ray.name) {
-            startHy2Relay(transport: v2ray.name)
+        // Detect by remark too: subscription hy2 profiles carry "…-hy2" in the remark
+        // while the internal name is a generated id; a name-only check would route
+        // them into xray → "unknown config id: hysteria2". Pass the hy2-tagged label
+        // so LimmHy2Process.buildConfig picks the right node (DE1/FR1).
+        let hy2tag = LimmAutoSwitch.isHy2Transport(v2ray.name) ? v2ray.name
+                   : (LimmAutoSwitch.isHy2Transport(v2ray.remark) ? v2ray.remark : nil)
+        if let hy2tag = hy2tag {
+            startHy2Relay(transport: hy2tag)
             return
         }
 
