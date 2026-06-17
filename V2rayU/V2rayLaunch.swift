@@ -276,6 +276,14 @@ class V2rayLaunch: NSObject {
             return
         }
 
+        // limm: hysteria2 profiles are not xray configs — bring up hy2 + xray relay
+        // so the fixed local SOCKS port keeps serving traffic. Covers launch, wake,
+        // auto-connect and the on/off toggle, not just the menu switch.
+        if LimmAutoSwitch.isHy2Transport(v2ray.name) {
+            startHy2Relay(transport: v2ray.name)
+            return
+        }
+
         let runMode = RunMode(rawValue: UserDefaults.get(forKey: .runMode) ?? "global") ?? .global
 
         // create json file
@@ -349,6 +357,72 @@ class V2rayLaunch: NSObject {
             NSLog("[V2rayLaunch] direct config written (socks:%d http:%d)", sockPort, httpPort)
         } catch {
             NSLog("[V2rayLaunch] writeDirect failed: %@", error.localizedDescription)
+        }
+    }
+
+    /// Write an xray config that keeps the local SOCKS/HTTP ports open but relays
+    /// everything into the locally-running hysteria2 SOCKS5 (:1088).
+    /// hysteria2 is not an xray protocol and listens on its own port; the browser
+    /// is pinned to socks 127.0.0.1:1080, so xray must bridge :1080 → hy2 :1088 →
+    /// server. Without this, selecting a hy2 profile killed connectivity because
+    /// nothing routed the fixed :1080 into the hy2 tunnel.
+    static func writeHy2Relay() {
+        let sockPort = getSocksProxyPort()
+        let httpPort = getHttpProxyPort()
+        let hy2Port  = LimmHy2Process.socksPort
+        let config = """
+        {
+          "log": {"access": "", "error": "", "loglevel": "none"},
+          "inbounds": [
+            {
+              "port": \(sockPort),
+              "protocol": "socks",
+              "settings": {"auth": "noauth", "udp": false}
+            },
+            {
+              "port": \(httpPort),
+              "protocol": "http",
+              "settings": {}
+            }
+          ],
+          "outbounds": [
+            {
+              "protocol": "socks",
+              "tag": "hy2",
+              "settings": {"servers": [{"address": "127.0.0.1", "port": \(hy2Port)}]}
+            }
+          ]
+        }
+        """
+        do {
+            let url = URL(fileURLWithPath: JsonConfigFilePath)
+            if FileManager.default.fileExists(atPath: JsonConfigFilePath) {
+                try? FileManager.default.removeItem(at: url)
+            }
+            try config.write(to: url, atomically: true, encoding: .utf8)
+            NSLog("[V2rayLaunch] hy2-relay config written (socks:%d http:%d → hy2:%d)",
+                  sockPort, httpPort, hy2Port)
+        } catch {
+            NSLog("[V2rayLaunch] writeHy2Relay failed: %@", error.localizedDescription)
+        }
+    }
+
+    /// Bring up hysteria2 as the active transport and point xray at it as a relay.
+    /// Used by both the menu switch (LimmAutoSwitch.doSwitch) and app launch/wake
+    /// (startV2rayCore), so hy2 works the same way the Full Test reaches :1088 —
+    /// only now real app traffic flows through it via the fixed local SOCKS port.
+    static func startHy2Relay(transport: String) {
+        NSLog("[V2rayLaunch] startHy2Relay → %@", transport)
+        if LimmAWGProcess.shared.isRunning { LimmAWGProcess.shared.stop() }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let ok = LimmHy2Process.shared.start(transport: transport)
+            NSLog("[V2rayLaunch] hy2 start (%@) → %@", transport, ok ? "ok" : "FAILED")
+            DispatchQueue.main.async {
+                writeHy2Relay()
+                _ = Start()
+                setRunMode(mode: .global)   // system proxy + status ON
+                menuController.showServers()
+            }
         }
     }
 

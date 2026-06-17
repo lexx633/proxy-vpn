@@ -151,20 +151,11 @@ class LimmAutoSwitch {
             }
 
             if LimmAutoSwitch.isHy2Transport(name) {
-                // → switching TO Hysteria2: stop xray + AWG, start hysteria2.
+                // → switching TO Hysteria2: bring up hy2 + point xray at it as a
+                //   relay so the fixed local SOCKS port (:1080) flows through it.
+                //   startHy2Relay() handles AWG teardown and hy2 (re)start.
                 NSLog("[AutoSwitch] entering HY2 transport: %@", name)
-                if leavingAWG || LimmAWGProcess.shared.isRunning {
-                    NSLog("[AutoSwitch] leaving AWG transport (→ HY2)")
-                    LimmAWGProcess.shared.stop()
-                }
-                if LimmHy2Process.shared.isRunning { LimmHy2Process.shared.stop() }
-                V2rayLaunch.stopV2rayCore()
-                let switchName = name   // capture before async block
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let ok = LimmHy2Process.shared.start(transport: switchName)
-                    NSLog("[AutoSwitch] HY2 start (%@) → %@", switchName, ok ? "ok" : "FAILED")
-                    DispatchQueue.main.async { menuController.showServers() }
-                }
+                V2rayLaunch.startHy2Relay(transport: name)
                 LimmAutoSwitch.sendSwitchEvent(to: name)
                 return
             }
