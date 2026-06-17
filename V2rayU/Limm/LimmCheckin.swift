@@ -235,6 +235,19 @@ class LimmCheckin {
         return ip
     }
 
+    /// Public IP of the CURRENTLY-selected node, resolved from its remark (…RU1…/…DE1…/…FR1…).
+    /// L1 (direct TCP) and L2 (SOCKS handshake) must probe the ACTIVE node — probing a hardcoded
+    /// FR1 made DE1/RU1 profiles report l1=0/l2=0 on a healthy tunnel. Falls back to serverIP.
+    private func activeNodeIP() -> String {
+        let cur = UserDefaults.get(forKey: .v2rayCurrentServerName) ?? ""
+        let remark = V2rayServer.list().first { $0.name == cur }?.remark ?? ""
+        let tag = (cur + " " + remark).uppercased()
+        if tag.contains("RU1") { return "185.244.173.28" }
+        if tag.contains("DE1") { return "77.90.52.123" }
+        if tag.contains("FR1") { return "45.95.175.170" }
+        return LimmConfig.serverIP
+    }
+
     /// A real egress can't be loopback/private — guards against a mirror (e.g. the www path
     /// behind the :443 stream-mux) echoing 127.0.0.1 instead of the true exit IP.
     private func isUsableEgress(_ ip: String) -> Bool {
@@ -297,14 +310,15 @@ class LimmCheckin {
         // (connection refused) was not in success list → l0 always 0 with --noproxy.
         let l0 = curlDirect("http://1.1.1.1", timeout: 5)
 
-        // L1 — 3 direct probes → average RTT (bypasses system proxy via --noproxy)
+        // L1 — 3 direct probes to the ACTIVE node → average RTT (bypasses system proxy)
+        let nodeIP = activeNodeIP()
         var l1 = 0
         var latencyMs = 0
         do {
             var samples: [Int] = []
             for _ in 0..<3 {
                 let t = Date()
-                if curlDirect("http://\(LimmConfig.serverIP):\(LimmConfig.serverPort)", timeout: 5) == 1 {
+                if curlDirect("http://\(nodeIP):\(LimmConfig.serverPort)", timeout: 5) == 1 {
                     samples.append(Int(Date().timeIntervalSince(t) * 1000))
                     l1 = 1
                 }
@@ -322,10 +336,10 @@ class LimmCheckin {
         var tunnelMs: Int? = nil
 
         if vpnOn {
-            // L2 — transport handshake: SOCKS connect to server:443 (§7.2 — channel up, no inet yet)
+            // L2 — transport handshake: SOCKS connect to the ACTIVE node:443 (§7.2 — channel up, no inet yet)
             let (serverCode, _) = curl(["--socks5", socks, "--connect-timeout", "8",
                                         "-o", "/dev/null",
-                                        "https://\(LimmConfig.serverIP):\(LimmConfig.serverPort)"],
+                                        "https://\(nodeIP):\(LimmConfig.serverPort)"],
                                        timeout: 10)
             l2 = (serverCode != "000") ? 1 : 0
 
@@ -464,22 +478,23 @@ class LimmCheckin {
         // L0 — local internet (same as normal checkin)
         let l0 = curlDirect("http://1.1.1.1", timeout: 5)
 
-        // L1 — direct TCP to server (bypasses proxy)
+        // L1 — direct TCP to the ACTIVE node (bypasses proxy)
+        let nodeIP = activeNodeIP()
         var l1 = 0; var latencyMs = 0
         var samples: [Int] = []
         for _ in 0..<3 {
             let t = Date()
-            if curlDirect("http://\(LimmConfig.serverIP):\(LimmConfig.serverPort)", timeout: 5) == 1 {
+            if curlDirect("http://\(nodeIP):\(LimmConfig.serverPort)", timeout: 5) == 1 {
                 samples.append(Int(Date().timeIntervalSince(t) * 1000))
                 l1 = 1
             }
         }
         if !samples.isEmpty { latencyMs = samples.reduce(0, +) / samples.count }
 
-        // L2 — transport handshake: SOCKS connect to server:443 through hy2 (§7.2)
+        // L2 — transport handshake: SOCKS connect to the ACTIVE node:443 through hy2 (§7.2)
         let (serverCode, _) = curl(["--socks5", socks, "--connect-timeout", "8",
                                     "-o", "/dev/null",
-                                    "https://\(LimmConfig.serverIP):\(LimmConfig.serverPort)"],
+                                    "https://\(nodeIP):\(LimmConfig.serverPort)"],
                                    timeout: 10)
         let l2 = (serverCode != "000") ? 1 : 0
 
