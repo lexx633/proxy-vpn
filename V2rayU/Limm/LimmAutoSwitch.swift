@@ -183,7 +183,8 @@ class LimmAutoSwitch {
     /// nil if this isn't a hy2 profile.
     static func hy2Tag(forName name: String) -> String? {
         if isHy2Transport(name) { return name }
-        if let item = V2rayServer.load(name: name), isHy2Transport(item.remark) { return item.remark }
+        if let item = V2rayServer.list().first(where: { $0.name == name }),
+           isHy2Transport(item.remark) { return item.remark }
         return nil
     }
 
