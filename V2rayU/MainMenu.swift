@@ -257,7 +257,9 @@ class MenuController: NSObject, NSMenuDelegate {
     /// (green/yellow/red by latency, gray "—" when unreachable).
     static func serverItemTitle(title: String, ping: String, reachable: Bool) -> NSAttributedString {
         let para = NSMutableParagraphStyle()
-        para.tabStops = [NSTextTab(textAlignment: .right, location: 240)]
+        // Tab at 170 (was 240): ping sits right after the longest name ("RU1-rel-de1" + "10 ms"),
+        // removing the wide empty gap so the submenu is ~2× tighter.
+        para.tabStops = [NSTextTab(textAlignment: .right, location: 170)]
         let font = NSFont.menuFont(ofSize: 0)
         let titleColor: NSColor = reachable ? .labelColor : .disabledControlTextColor
         let s = NSMutableAttributedString(
@@ -268,7 +270,10 @@ class MenuController: NSObject, NSMenuDelegate {
         if !reachable {
             pingColor = .disabledControlTextColor
         } else if let ms = Int(ping.replacingOccurrences(of: " ms", with: "")) {
-            pingColor = ms < 150 ? .systemGreen : (ms < 600 ? .systemYellow : .systemRed)
+            // Good latency uses .labelColor (same as the name — black on light menus, white on
+            // dark) instead of systemGreen, which was unreadable on the gray menu background.
+            // Yellow/red keep their warning color (they contrast fine).
+            pingColor = ms < 150 ? .labelColor : (ms < 600 ? .systemYellow : .systemRed)
         } else {
             pingColor = .secondaryLabelColor
         }
