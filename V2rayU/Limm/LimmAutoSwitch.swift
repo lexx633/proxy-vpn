@@ -20,11 +20,14 @@ class LimmAutoSwitch {
 
     // MARK: - Transport ladder (priority order)
 
-    /// Ordered list of known transport server names.
-    /// Index 0 = preferred; failover goes 0→1→2→3→0 (cyclically).
-    /// AmneziaWG ("FR1-awg") is NOT an xray profile — it's a userspace TUN driven by
-    /// LimmAWGProcess. doSwitch() branches on this name. See docs/TZ-amneziawg-clients.md §B.
-    let transportLadder: [String] = ["FR1-xhttp", "FR1-cf", "FR1-hy2", "FR1-awg", "FR1-wg", "FR1-vl"]
+    /// Ordered list of known transport server names. MUST match the #fragment
+    /// names in the subscription (server/www/vpn/sub) so loadSelectedItem() finds
+    /// a real imported profile — otherwise failover jumps to a nil item and kills
+    /// connectivity. Index 0 = preferred; failover goes 0→1→2→3→0 (cyclically).
+    /// Order by robustness: REALITY → XHTTP → WS(CF) → hy2 (UDP, last resort).
+    /// Note: tuic (-tc) is excluded — V2rayU does not parse tuic:// URIs, so those
+    /// profiles are never imported on macOS. AmneziaWG removed from the fleet 2026-06.
+    let transportLadder: [String] = ["FR1-vl", "FR1-xhttp", "FR1-ws", "FR1-hy2"]
 
     // MARK: - Settings from UserDefaults
 
