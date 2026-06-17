@@ -566,7 +566,7 @@ final class LimmFullTest {
     private func curlBody(url: String, socksPort: Int, timeout: Int) -> String? {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-        proc.arguments = ["--max-time", "\(timeout)", "-s",
+        proc.arguments = ["-4", "--max-time", "\(timeout)", "-s",
                           "--socks5", "127.0.0.1:\(socksPort)", url]
         let outPipe = Pipe()
         proc.standardOutput = outPipe

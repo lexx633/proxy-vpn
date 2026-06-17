@@ -117,7 +117,7 @@ class LimmCheckin {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
         let connectTimeout = max(timeout - 2, 3)   // connect phase ≤ (timeout-2)s
-        var fullArgs = ["--max-time", "\(timeout)",
+        var fullArgs = ["-4", "--max-time", "\(timeout)",
                         "--connect-timeout", "\(connectTimeout)",
                         "-s", "-L",
                         "-A", "Mozilla/5.0 (limm-probe)",
@@ -157,7 +157,7 @@ class LimmCheckin {
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
         // --noproxy '*' bypasses macOS system proxy (set by V2rayU) so L0/L1 measure
         // real internet reachability, not the VPN tunnel.
-        proc.arguments = ["--max-time", "\(timeout)", "-s", "-o", "/dev/null",
+        proc.arguments = ["-4", "--max-time", "\(timeout)", "-s", "-o", "/dev/null",
                           "--connect-timeout", "\(timeout)", "--noproxy", "*", url]
         proc.standardOutput = Pipe(); proc.standardError = Pipe()
         do { try proc.run(); proc.waitUntilExit() } catch { return 0 }
@@ -539,7 +539,7 @@ class LimmCheckin {
     private func curlNoProxy(_ url: String, timeout: Int = 12) -> (String, String) {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-        proc.arguments = ["--max-time", "\(timeout)",
+        proc.arguments = ["-4", "--max-time", "\(timeout)",
                           "--connect-timeout", "\(max(timeout - 2, 3))",
                           "-s", "--noproxy", "*",
                           "-A", "Mozilla/5.0 (limm-probe)",
