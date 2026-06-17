@@ -10,13 +10,28 @@
 // No ping probes. No flapping. Source of truth = last checkin L3 result.
 
 import Foundation
+import Network
 
 class LimmAutoSwitch {
     static let shared = LimmAutoSwitch()
 
     private var timer: Timer?
+    private var probeTimer: Timer?
     private var lastSwitchDate: Date? = nil
     private init() {}
+
+    // MARK: - Latency store (filled by the 5-min TCP pre-ping)
+
+    /// Measured TCP-connect latency per profile name, in ms. -1 = unreachable.
+    /// A name absent from the dict = not probed yet (treated as reachable so the
+    /// menu doesn't gray everything out before the first probe completes).
+    private var latencyByName: [String: Int] = [:]
+    private let latencyLock = NSLock()
+
+    /// Probe interval — re-ping every profile every 5 minutes.
+    private static let probeIntervalSec: TimeInterval = 300
+    /// Per-connection probe timeout.
+    private static let probeTimeoutMs = 2000
 
     // MARK: - Transport ladder (priority order)
 
@@ -62,6 +77,21 @@ class LimmAutoSwitch {
     }
 
     func stop() { timer?.invalidate(); timer = nil }
+
+    /// Starts the 5-minute pre-ping timer. Runs ALWAYS (independent of auto mode)
+    /// so the menu shows fresh per-profile latency and grays out unreachable ones
+    /// even when the user picks servers manually. Call on launch and wake.
+    func startProbing() {
+        stopProbing()
+        DispatchQueue.global(qos: .utility).async { [weak self] in self?.refreshPings() }
+        let t = Timer(timeInterval: LimmAutoSwitch.probeIntervalSec, repeats: true) { [weak self] _ in
+            DispatchQueue.global(qos: .utility).async { self?.refreshPings() }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        probeTimer = t
+    }
+
+    func stopProbing() { probeTimer?.invalidate(); probeTimer = nil }
 
     // MARK: - Evaluation
 
@@ -110,13 +140,30 @@ class LimmAutoSwitch {
             }
         }
 
-        // Advance to next transport in ladder (cyclically).
-        let nextIdx  = (curIdx + 1) % transportLadder.count
-        let nextName = transportLadder[nextIdx]
-
-        NSLog("[AutoSwitch] L3=fail on '%@' → switching to '%@' (ladder %d→%d)",
-              curName, nextName, curIdx, nextIdx)
+        // Real liveness of the ACTIVE profile failed (L3) → switch, but only to a
+        // pre-pinged REACHABLE alternative. Refresh pings first so we don't jump to
+        // a transport whose host went down since the last 5-min probe.
+        _ = curIdx   // (kept above only to confirm curName is a ladder member)
+        refreshPings()
+        guard let nextName = bestLadderCandidate(excluding: curName) else {
+            NSLog("[AutoSwitch] L3=fail on '%@' but no reachable alternative — staying", curName)
+            return
+        }
+        let ms = latency(for: nextName) ?? -1
+        NSLog("[AutoSwitch] L3=fail on '%@' → switching to '%@' (%dms, lowest reachable)",
+              curName, nextName, ms)
         doSwitch(to: nextName)
+    }
+
+    /// Lowest-latency reachable ladder profile other than `cur`, or nil if none
+    /// answered the TCP pre-ping. Drives ping-based failover when auto is enabled.
+    private func bestLadderCandidate(excluding cur: String) -> String? {
+        var best: (name: String, ms: Int)? = nil
+        for name in transportLadder where name != cur {
+            guard let ms = latency(for: name), ms >= 0 else { continue }
+            if best == nil || ms < best!.ms { best = (name, ms) }
+        }
+        return best?.name
     }
 
     /// AWG transport name. When this is the target/current transport we drive
@@ -176,6 +223,84 @@ class LimmAutoSwitch {
             menuController.showServers()
             LimmAutoSwitch.sendSwitchEvent(to: name)
         }
+    }
+
+    // MARK: - TCP pre-ping (reachability + latency for the menu)
+
+    /// Probe every imported server's host:port with a quick TCP connect and store
+    /// the latency. Note: this proves the host/port is REACHABLE, not that the
+    /// tunnel protocol works (hy2 is UDP; CF/REALITY answer TCP regardless). Real
+    /// tunnel liveness comes from the active profile's L3 egress — see hybrid note.
+    func refreshPings() {
+        let servers = V2rayServer.list()
+        var results: [String: Int] = [:]
+        let lock = NSLock()
+        let group = DispatchGroup()
+        for s in servers {
+            guard let ep = endpoint(for: s) else { continue }
+            group.enter()
+            DispatchQueue.global(qos: .utility).async {
+                let ms = self.tcpPing(host: ep.host, port: ep.port) ?? -1
+                lock.lock(); results[s.name] = ms; lock.unlock()
+                group.leave()
+            }
+        }
+        // Bound the whole sweep so a hung probe never stalls failover.
+        _ = group.wait(timeout: .now() + .milliseconds(LimmAutoSwitch.probeTimeoutMs + 1500))
+        latencyLock.lock(); latencyByName = results; latencyLock.unlock()
+        DispatchQueue.main.async { menuController.showServers() }
+    }
+
+    /// host:port for a profile, parsed from its original share URL (vless:// or
+    /// hysteria2://) — both carry `userinfo@host:port`. Authoritative, no hardcode.
+    private func endpoint(for item: V2rayItem) -> (host: String, port: Int)? {
+        var s = item.url
+        if let h = s.range(of: "#") { s = String(s[..<h.lowerBound]) }
+        guard let u = URL(string: s), let host = u.host, !host.isEmpty else { return nil }
+        return (host, u.port ?? 443)
+    }
+
+    /// Single TCP-connect latency probe. Returns ms on success, nil on timeout/fail.
+    private func tcpPing(host: String, port: Int, timeoutMs: Int = LimmAutoSwitch.probeTimeoutMs) -> Int? {
+        guard let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else { return nil }
+        let conn = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .tcp)
+        let sem = DispatchSemaphore(value: 0)
+        var result: Int? = nil
+        let start = Date()
+        conn.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                result = Int(Date().timeIntervalSince(start) * 1000)
+                sem.signal()
+            case .failed, .cancelled:
+                sem.signal()
+            default:
+                break
+            }
+        }
+        conn.start(queue: DispatchQueue(label: "limm.tcpping"))
+        _ = sem.wait(timeout: .now() + .milliseconds(timeoutMs))
+        conn.cancel()
+        return result
+    }
+
+    /// Measured latency (ms) for a profile, or nil if not probed yet. -1 = unreachable.
+    func latency(for name: String) -> Int? {
+        latencyLock.lock(); defer { latencyLock.unlock() }
+        return latencyByName[name]
+    }
+
+    /// False only when a profile was probed AND its host/port did not answer.
+    /// Untested (nil) → true, so the menu doesn't gray out before the first probe.
+    func isReachable(_ name: String) -> Bool {
+        guard let ms = latency(for: name) else { return true }
+        return ms >= 0
+    }
+
+    /// Menu suffix: "123 ms", "—" (unreachable), or "" (not probed yet).
+    func pingLabel(for name: String) -> String {
+        guard let ms = latency(for: name) else { return "" }
+        return ms >= 0 ? "\(ms) ms" : "—"
     }
 
     /// Notify the monitoring collector that a transport switch happened (dashboard event).

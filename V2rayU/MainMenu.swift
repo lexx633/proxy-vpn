@@ -198,6 +198,9 @@ class MenuController: NSObject, NSMenuDelegate {
     // Build the Servers submenu from the saved server list
     func getServerMenus() -> NSMenu {
         let menu = NSMenu()
+        // Honor our explicit isEnabled (gray out unreachable profiles); otherwise
+        // AppKit auto-enables any item that has a target/action.
+        menu.autoenablesItems = false
 
         // "Auto" item at top — auto-switch between servers
         let autoItem = NSMenuItem(title: "Auto",
@@ -232,15 +235,45 @@ class MenuController: NSObject, NSMenuDelegate {
     }
 
     func buildServerItem(item: V2rayItem, curSer: String?) -> NSMenuItem {
-        let title = item.remark.isEmpty ? item.name : item.remark
-        let menuItem = NSMenuItem(title: title,
-                                  action: #selector(switchServer(_:)),
-                                  keyEquivalent: "")
+        let title     = item.remark.isEmpty ? item.name : item.remark
+        let reachable = LimmAutoSwitch.shared.isReachable(item.name)
+        let ping      = LimmAutoSwitch.shared.pingLabel(for: item.name)
+        let menuItem  = NSMenuItem(title: title,
+                                   action: #selector(switchServer(_:)),
+                                   keyEquivalent: "")
         menuItem.target = self
         menuItem.representedObject = item
         menuItem.state = (item.name == curSer) ? .on : .off
-        menuItem.isEnabled = item.isValid
+        // Gray out + block selection of profiles whose host/port did not answer
+        // the pre-ping. Untested profiles stay enabled.
+        menuItem.isEnabled = item.isValid && reachable
+        if !ping.isEmpty {
+            menuItem.attributedTitle = MenuController.serverItemTitle(title: title, ping: ping, reachable: reachable)
+        }
         return menuItem
+    }
+
+    /// Build "remark …… ping" with the ping right-aligned and color-coded
+    /// (green/yellow/red by latency, gray "—" when unreachable).
+    static func serverItemTitle(title: String, ping: String, reachable: Bool) -> NSAttributedString {
+        let para = NSMutableParagraphStyle()
+        para.tabStops = [NSTextTab(textAlignment: .right, location: 240)]
+        let font = NSFont.menuFont(ofSize: 0)
+        let titleColor: NSColor = reachable ? .labelColor : .disabledControlTextColor
+        let s = NSMutableAttributedString(
+            string: title + "\t" + ping,
+            attributes: [.font: font, .foregroundColor: titleColor, .paragraphStyle: para])
+        let pingRange = (s.string as NSString).range(of: ping, options: .backwards)
+        let pingColor: NSColor
+        if !reachable {
+            pingColor = .disabledControlTextColor
+        } else if let ms = Int(ping.replacingOccurrences(of: " ms", with: "")) {
+            pingColor = ms < 150 ? .systemGreen : (ms < 600 ? .systemYellow : .systemRed)
+        } else {
+            pingColor = .secondaryLabelColor
+        }
+        s.addAttribute(.foregroundColor, value: pingColor, range: pingRange)
+        return s
     }
 
     // MARK: - IBActions (kept for xib wiring; most are no-ops in simplified UI)

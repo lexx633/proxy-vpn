@@ -97,6 +97,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // limm: transport-ladder failover (default on; register before start() reads the pref)
         LimmAutoSwitch.registerDefaults()
         LimmAutoSwitch.shared.start()
+        // limm: 5-min TCP pre-ping — always on (menu latency + gray-out), even in manual mode
+        LimmAutoSwitch.shared.startProbing()
 
         // limm: auto check updates — only if enabled AND >30 days since last check.
         // Stores last check timestamp so the app doesn't ping GitHub on every launch.
@@ -175,6 +177,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         LimmCheckin.shared.start()
         LimmAutoSwitch.shared.stop()
         LimmAutoSwitch.shared.start()
+        LimmAutoSwitch.shared.startProbing()
     }
 
     @objc func onSleepNote(note: NSNotification) {
