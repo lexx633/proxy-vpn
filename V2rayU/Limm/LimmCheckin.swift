@@ -196,6 +196,58 @@ class LimmCheckin {
         return Int(sec * 1000)
     }
 
+    // MARK: - Egress (§7.3/§7.4 contract)
+
+    /// Egress IP through SOCKS: own `/api/myip` (CF path) first, `api.ipify.org` fallback.
+    /// Drops the sole dependency on ipify (false negatives when it's down/blocked). The probe
+    /// rides the tunnel → exit is outside RU → CF (`limm.space`) is reachable and returns the
+    /// real exit-node IP via CF-Connecting-IP. §7.4: a non-nil result means "tunnel carries
+    /// traffic" (egress != null); the SERVER decides whether it's our node (SERVER_IPS).
+    private func egressViaSocks(_ socks: String, timeout: Int = 15) -> String? {
+        let (c1, b1) = curl(["--socks5", socks, "https://limm.space/api/myip"], timeout: timeout)
+        if c1 == "200", let ip = parseMyIp(b1) { return ip }
+        let (c2, b2) = curl(["--socks5", socks, "https://api.ipify.org"], timeout: timeout)
+        if c2 == "200" {
+            let ip = b2.trimmingCharacters(in: .whitespacesAndNewlines)
+            if isUsableEgress(ip) { return ip }
+        }
+        return nil
+    }
+
+    /// Direct (no-proxy) egress — for AWG/utun where traffic already rides the tunnel.
+    private func egressDirect(timeout: Int = 12) -> String? {
+        let (c1, b1) = curlNoProxy("https://limm.space/api/myip", timeout: timeout)
+        if c1 == "200", let ip = parseMyIp(b1) { return ip }
+        let (c2, b2) = curlNoProxy("https://api.ipify.org", timeout: timeout)
+        if c2 == "200" {
+            let ip = b2.trimmingCharacters(in: .whitespacesAndNewlines)
+            if isUsableEgress(ip) { return ip }
+        }
+        return nil
+    }
+
+    /// Parse {"ip":"..."} from /api/myip, rejecting blank/loopback/private.
+    private func parseMyIp(_ body: String) -> String? {
+        guard let data = body.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let ip = (obj["ip"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              isUsableEgress(ip) else { return nil }
+        return ip
+    }
+
+    /// A real egress can't be loopback/private — guards against a mirror (e.g. the www path
+    /// behind the :443 stream-mux) echoing 127.0.0.1 instead of the true exit IP.
+    private func isUsableEgress(_ ip: String) -> Bool {
+        if ip.isEmpty { return false }
+        if ip.hasPrefix("127.") || ip == "::1" || ip.hasPrefix("10.")
+            || ip.hasPrefix("192.168.") || ip.hasPrefix("169.254.") { return false }
+        if ip.hasPrefix("172.") {
+            let p = ip.split(separator: ".")
+            if p.count > 1, let o2 = Int(p[1]), (16...31).contains(o2) { return false }
+        }
+        return true
+    }
+
     // MARK: - Main checkin
 
     /// Synchronously runs all curl probes, then fires HTTP POST (async, fire-and-forget).
@@ -270,27 +322,24 @@ class LimmCheckin {
         var tunnelMs: Int? = nil
 
         if vpnOn {
-            // L2/L3 — connect to server through SOCKS
+            // L2 — transport handshake: SOCKS connect to server:443 (§7.2 — channel up, no inet yet)
             let (serverCode, _) = curl(["--socks5", socks, "--connect-timeout", "8",
                                         "-o", "/dev/null",
                                         "https://\(LimmConfig.serverIP):\(LimmConfig.serverPort)"],
                                        timeout: 10)
             l2 = (serverCode != "000") ? 1 : 0
-            l3 = l2
 
-            // L4 — egress IP through tunnel
-            let (ipCode, ipBody) = curl(["--socks5", socks, "https://api.ipify.org"], timeout: 15)
-            if ipCode == "200" {
-                egressIP = ipBody.trimmingCharacters(in: .whitespacesAndNewlines)
-                l4 = LimmConfig.isOurEgress(egressIP) ? 1 : 0
-            }
+            // L3 — tunnel carries traffic: egress via /api/myip (CF) → ipify (§7.3/§7.4).
+            // Any egress = l3; the server maps egress_ip→node (no client-side isOurEgress).
+            if let ip = egressViaSocks(socks) { egressIP = ip; l3 = 1 }
 
-            // tunnel_ms — 3 roundtrips through VPN tunnel → average
+            // tunnel_ms + L4 (browser_ok) — generate_204 through the tunnel (§7.2)
             var tmsSamples: [Int] = []
             for _ in 0..<3 {
                 if let ms = measureTunnelMs(socks: socks) { tmsSamples.append(ms) }
             }
             if !tmsSamples.isEmpty { tunnelMs = tmsSamples.reduce(0, +) / tmsSamples.count }
+            l4 = (tunnelMs != nil) ? 1 : 0
 
             // Service probes — run in parallel so all 3 take ≤10s instead of 3×10s sequential
             let probeGroup = DispatchGroup()
@@ -335,6 +384,7 @@ class LimmCheckin {
             "label":       LimmConfig.clientLabel,
             "app_version": LimmConfig.appVersion,
             "l0_local_net": l0, "l1_tcp443": l1, "l2_handshake": l2, "l3_tunnel": l3, "l4_dest": l4,
+            "browser_ok": l4,   // §7.7 contract field (generate_204 through the tunnel)
             "vpn_running": vpnOn ? 1 : 0,
             "raw": raw,
         ]
@@ -367,11 +417,11 @@ class LimmCheckin {
         // which is fine — if utun is down we'd get 0 here too). Kept for parity with the dashboard.
         let l0 = curlDirect("http://1.1.1.1", timeout: 5)
 
-        // Egress IP via direct curl (NO --socks5). Routed through utun when AWG is up.
-        let (ipCode, ipBody) = curlNoProxy("https://api.ipify.org", timeout: 12)
-        let egressIP = ipBody.trimmingCharacters(in: .whitespacesAndNewlines)
-        let egressOK = (ipCode == "200" && LimmConfig.isOurEgress(egressIP))
-        let l = egressOK ? 1 : 0   // L1/L2/L3/L4 all collapse to "is the tunnel carrying us out via the server"
+        // Egress via /api/myip (CF) → ipify, direct through utun (§7.3/§7.4).
+        // Any egress = tunnel carrying us out (no client-side isOurEgress; server maps it).
+        let egressIP = egressDirect() ?? ""
+        let egressOK = !egressIP.isEmpty
+        let l = egressOK ? 1 : 0   // L1/L2/L3/L4 all collapse to "is the tunnel carrying us out"
 
         NSLog("[Limm] AWG checkin egress=%@ ok=%d", egressIP, egressOK ? 1 : 0)
 
@@ -390,6 +440,7 @@ class LimmCheckin {
             "label":       LimmConfig.clientLabel,
             "app_version": LimmConfig.appVersion,
             "l0_local_net": l0, "l1_tcp443": l, "l2_handshake": l, "l3_tunnel": l, "l4_dest": l,
+            "browser_ok": l,   // §7.7 contract field
             "vpn_running": 1,
             "raw": raw,
         ]
@@ -425,21 +476,18 @@ class LimmCheckin {
         }
         if !samples.isEmpty { latencyMs = samples.reduce(0, +) / samples.count }
 
-        // L2/L3 — connect to server through hy2 SOCKS
+        // L2 — transport handshake: SOCKS connect to server:443 through hy2 (§7.2)
         let (serverCode, _) = curl(["--socks5", socks, "--connect-timeout", "8",
                                     "-o", "/dev/null",
                                     "https://\(LimmConfig.serverIP):\(LimmConfig.serverPort)"],
                                    timeout: 10)
         let l2 = (serverCode != "000") ? 1 : 0
-        let l3 = l2
 
-        // L4 — egress IP (accept either FR1 or DE1 server)
-        let (ipCode, ipBody) = curl(["--socks5", socks, "https://api.ipify.org"], timeout: 15)
-        var l4 = 0; var egressIP = ""
-        if ipCode == "200" {
-            egressIP = ipBody.trimmingCharacters(in: .whitespacesAndNewlines)
-            l4 = LimmConfig.isOurEgress(egressIP) ? 1 : 0
-        }
+        // L3 — tunnel carries traffic: egress via /api/myip (CF) → ipify (§7.4). Any egress = l3.
+        var l3 = 0; var egressIP = ""
+        if let ip = egressViaSocks(socks) { egressIP = ip; l3 = 1 }
+        // The egress fetch itself is a real HTTPS GET through the tunnel → browsing works.
+        let l4 = l3
 
         NSLog("[Limm] HY2 checkin (%@) l0=%d l1=%d l2=%d l3=%d l4=%d egress=%@",
               transport, l0, l1, l2, l3, l4, egressIP)
@@ -462,6 +510,7 @@ class LimmCheckin {
             "label":        LimmConfig.clientLabel,
             "app_version":  LimmConfig.appVersion,
             "l0_local_net": l0, "l1_tcp443": l1, "l2_handshake": l2, "l3_tunnel": l3, "l4_dest": l4,
+            "browser_ok":   l4,   // §7.7 contract field
             "vpn_running":  1,
             "raw":          raw,
         ]
