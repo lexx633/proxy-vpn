@@ -257,9 +257,10 @@ class MenuController: NSObject, NSMenuDelegate {
     /// (green/yellow/red by latency, gray "—" when unreachable).
     static func serverItemTitle(title: String, ping: String, reachable: Bool) -> NSAttributedString {
         let para = NSMutableParagraphStyle()
-        // Tab at 170 (was 240): ping sits right after the longest name ("RU1-rel-de1" + "10 ms"),
-        // removing the wide empty gap so the submenu is ~2× tighter.
-        para.tabStops = [NSTextTab(textAlignment: .right, location: 170)]
+        // Tab at 150 (240→170→150): ping sits just after the longest name ("RU1-rel-de1"
+        // + "37 ms" ≈ 145pt), so the submenu is as tight as the content allows without
+        // the name/ping columns overlapping.
+        para.tabStops = [NSTextTab(textAlignment: .right, location: 150)]
         let font = NSFont.menuFont(ofSize: 0)
         let titleColor: NSColor = reachable ? .labelColor : .disabledControlTextColor
         let s = NSMutableAttributedString(
