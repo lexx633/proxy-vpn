@@ -72,9 +72,9 @@ enum LimmConfig {
     static let serverIP     = "45.95.175.170"
     static let serverPort   = 443
 
-    // All known node egress IPs (FR1 + DE1). Egress-IP "is this our VPN?" checks must
-    // accept ANY node, not just serverIP — otherwise DE1 profiles get a false "not VPN".
-    static let serverIPs: Set<String> = ["45.95.175.170", "77.90.52.123"]
+    // All known node egress IPs (FR1 + DE1 + RU1). Egress-IP "is this our VPN?" checks must
+    // accept ANY node, not just serverIP — otherwise non-primary profiles get a false "not VPN".
+    static let serverIPs: Set<String> = ["45.95.175.170", "77.90.52.123", "185.244.173.28"]
     static func isOurEgress(_ ip: String) -> Bool { serverIPs.contains(ip) }
 
     // UserDefaults keys
