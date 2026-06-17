@@ -516,27 +516,25 @@ final class LimmFullTest {
         return (true, ip, browser, "\(ip) · \(browser ? "204✓" : "204✗")")
     }
 
-    /// §7.3: egress через SOCKS. Свой `/api/myip` (3 зеркала www→vpn→limm) первым,
-    /// `api.ipify.org` — фолбэк. Снимает зависимость от ipify (главный источник ложных
-    /// негативов). Возвращает IP или nil.
+    /// §7.3: egress через SOCKS. Свой `/api/myip` первым, `api.ipify.org` — фолбэк.
+    /// Снимает зависимость от ipify (главный источник ложных негативов). Возвращает IP или nil.
+    ///
+    /// Бьём именно **`limm.space` (CF)**, а не www/vpn-зеркала: проба идёт ЧЕРЕЗ туннель
+    /// (выход вне РФ → CF всегда достижим), поэтому first-mile обход блокировки не нужен,
+    /// а только CF отдаёт настоящий IP ноды-выхода (`CF-Connecting-IP`). Прямой www через
+    /// `:443` stream-мукс вернул бы `127.0.0.1`, vpn/Bunny — IP edge (см. map-db.md).
     private func egressViaSocks(port: Int, timeout: Int, retries: Int) -> String? {
-        let mirrors = LimmConfig.mirrorURLs("https://www.limm.space/api/myip")
-        // /api/myip: www первым с ретраями (XHTTP холодный старт), прочие зеркала — по разу.
-        for (i, ep) in mirrors.enumerated() {
-            let tries = (i == 0) ? retries : 1
-            for attempt in 1...tries {
-                if let body = curlBody(url: ep, socksPort: port, timeout: timeout),
-                   let ip = parseMyip(body), isUsableEgress(ip) { return ip }
-                if attempt < tries { Thread.sleep(forTimeInterval: 0.5) }
+        let endpoints = ["https://limm.space/api/myip", "https://api.ipify.org"]
+        for ep in endpoints {
+            let isMyip = ep.contains("/api/myip")
+            for attempt in 1...retries {
+                if let body = curlBody(url: ep, socksPort: port, timeout: timeout) {
+                    let ip = isMyip ? parseMyip(body)
+                                    : body.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let ip = ip, isUsableEgress(ip) { return ip }
+                }
+                if attempt < retries { Thread.sleep(forTimeInterval: 0.5) }
             }
-        }
-        // Фолбэк: api.ipify.org (тело — голый IP).
-        for attempt in 1...retries {
-            if let body = curlBody(url: "https://api.ipify.org", socksPort: port, timeout: timeout) {
-                let ip = body.trimmingCharacters(in: .whitespacesAndNewlines)
-                if isUsableEgress(ip) { return ip }
-            }
-            if attempt < retries { Thread.sleep(forTimeInterval: 0.5) }
         }
         return nil
     }
