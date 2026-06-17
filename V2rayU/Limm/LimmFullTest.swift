@@ -513,7 +513,7 @@ final class LimmFullTest {
         }
         // +1 быстрый запрос только на живых профилях: «egress-точка жива» vs «browsing работает».
         let browser = probe204(port: port)
-        return (true, ip, browser, "\(ip) · \(browser ? "204✓" : "204✗")")
+        return (true, ip, browser, "\(ip) · \(browser ? "сайт ✓" : "сайт ✗")")
     }
 
     /// §7.3: egress через SOCKS. Свой `/api/myip` первым, `api.ipify.org` — фолбэк.

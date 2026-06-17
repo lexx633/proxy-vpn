@@ -1176,7 +1176,11 @@ class V2rayConfig: NSObject {
         if streamJson["wsSettings"].dictionaryValue.count > 0 {
             var wsSettings = WsSettings()
             wsSettings.path = streamJson["wsSettings"]["path"].stringValue
-            wsSettings.headers.host = streamJson["wsSettings"]["headers"]["host"].stringValue
+            // Accept both the modern top-level "host" and the legacy headers.host/Host.
+            let wsHost = streamJson["wsSettings"]["host"].string
+                ?? streamJson["wsSettings"]["headers"]["host"].string
+                ?? streamJson["wsSettings"]["headers"]["Host"].stringValue
+            wsSettings.headers.host = wsHost
 
             stream.wsSettings = wsSettings
         }

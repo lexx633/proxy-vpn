@@ -171,6 +171,42 @@ struct KcpSettingsHeader: Codable {
 struct WsSettings: Codable {
     var path: String = ""
     var headers: WsSettingsHeader = WsSettingsHeader()
+
+    // Xray deprecated carrying Host inside wsSettings.headers ("This feature \"host\"
+    // in \"headers\" is deprecated … migrated to independent \"host\""). Emit the modern
+    // top-level `host` field and drop `headers`, so the core stops warning and won't
+    // break when it removes the legacy form. The in-memory model keeps `headers.host`
+    // (set by every import path), so only the wire format changes. Decode accepts both
+    // the new top-level `host` and the legacy `headers.host`.
+    enum CodingKeys: String, CodingKey {
+        case path
+        case host
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.path = (try? c.decode(String.self, forKey: .path)) ?? ""
+        var hdr = WsSettingsHeader()
+        if let h = try? c.decode(String.self, forKey: .host), !h.isEmpty {
+            hdr.host = h
+        } else if let legacy = try? decoder.container(keyedBy: LegacyKeys.self),
+                  let nested = try? legacy.decode(WsSettingsHeader.self, forKey: .headers) {
+            hdr = nested
+        }
+        self.headers = hdr
+    }
+
+    private enum LegacyKeys: String, CodingKey { case headers }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(path, forKey: .path)
+        if !headers.host.isEmpty {
+            try c.encode(headers.host, forKey: .host)
+        }
+    }
 }
 
 struct WsSettingsHeader: Codable {

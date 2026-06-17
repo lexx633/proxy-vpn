@@ -1,7 +1,7 @@
 // LimmHy2Process.swift — manages hysteria2 binary as a child Process.
 //
 // Hysteria2 is a QUIC-based proxy protocol not natively supported by Xray-core.
-// When DE1-hy2 or FR1-hy2 transport is selected:
+// When a *-hy2 transport (DE1 / FR1 / RU1) is selected:
 //   (a) stop xray  (b) write YAML config  (c) run hysteria2 binary
 //   (d) probe L2/L3/L4 through its SOCKS5 on :1088.
 //
@@ -33,7 +33,11 @@ final class LimmHy2Process {
         static let fr1Server       = "45.95.175.170:443"
         static let fr1Auth         = "wT2HgRNnTJauLQd6eHjpfBd7"
         static let fr1ObfsPassword = "FKtE5ePLMt5USnNgGZVQMhnB"
-        // TLS (both servers share SNI; insecure=true, pinSHA256 omitted for simplicity)
+        // RU1 — 185.244.173.28 (UDP :443; matches client/hy2-ru1.yaml + server config)
+        static let ru1Server       = "185.244.173.28:443"
+        static let ru1Auth         = "3bd53b2e4eeeaac9b68bffd66fa6f3bf"
+        static let ru1ObfsPassword = "adb517077635c20a447995e601f0767a"
+        // TLS (all nodes share SNI; insecure=true, pinSHA256 omitted for simplicity)
         static let tlsSNI          = "www.bing.com"
     }
 
@@ -61,10 +65,16 @@ final class LimmHy2Process {
 
     /// Build a hysteria2 YAML client config for the given transport tag.
     func buildConfig(for transport: String) -> String {
-        let isDE1 = transport.uppercased().contains("DE1")
-        let server       = isDE1 ? HY2.de1Server       : HY2.fr1Server
-        let auth         = isDE1 ? HY2.de1Auth         : HY2.fr1Auth
-        let obfsPassword = isDE1 ? HY2.de1ObfsPassword : HY2.fr1ObfsPassword
+        // Pick node by tag substring (three-way: RU1 / DE1 / FR1 default).
+        let up = transport.uppercased()
+        let server: String, auth: String, obfsPassword: String
+        if up.contains("RU1") {
+            server = HY2.ru1Server; auth = HY2.ru1Auth; obfsPassword = HY2.ru1ObfsPassword
+        } else if up.contains("DE1") {
+            server = HY2.de1Server; auth = HY2.de1Auth; obfsPassword = HY2.de1ObfsPassword
+        } else {
+            server = HY2.fr1Server; auth = HY2.fr1Auth; obfsPassword = HY2.fr1ObfsPassword
+        }
         return """
         server: \(server)
 
