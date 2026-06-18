@@ -37,6 +37,10 @@ final class LimmHy2Process {
         static let ru1Server       = "185.244.173.28:443"
         static let ru1Auth         = "3bd53b2e4eeeaac9b68bffd66fa6f3bf"
         static let ru1ObfsPassword = "adb517077635c20a447995e601f0767a"
+        // YC — test.limm.space (Yandex Cloud, UDP :443)
+        static let ycServer        = "test.limm.space:443"
+        static let ycAuth          = "0e461cefc18fa992cc00091cb093d9b9"
+        static let ycObfsPassword  = "8dc1212a53c6cc51f64a50c56edff756"
         // TLS (all nodes share SNI; insecure=true, pinSHA256 omitted for simplicity)
         static let tlsSNI          = "www.bing.com"
     }
@@ -65,13 +69,15 @@ final class LimmHy2Process {
 
     /// Build a hysteria2 YAML client config for the given transport tag.
     func buildConfig(for transport: String) -> String {
-        // Pick node by tag substring (three-way: RU1 / DE1 / FR1 default).
+        // Pick node by tag substring.
         let up = transport.uppercased()
         let server: String, auth: String, obfsPassword: String
         if up.contains("RU1") {
             server = HY2.ru1Server; auth = HY2.ru1Auth; obfsPassword = HY2.ru1ObfsPassword
         } else if up.contains("DE1") {
             server = HY2.de1Server; auth = HY2.de1Auth; obfsPassword = HY2.de1ObfsPassword
+        } else if up.contains("YC") {
+            server = HY2.ycServer; auth = HY2.ycAuth; obfsPassword = HY2.ycObfsPassword
         } else {
             server = HY2.fr1Server; auth = HY2.fr1Auth; obfsPassword = HY2.fr1ObfsPassword
         }
