@@ -37,6 +37,10 @@ final class LimmHy2Process {
         static let ru1Server       = "185.244.173.28:443"
         static let ru1Auth         = "3bd53b2e4eeeaac9b68bffd66fa6f3bf"
         static let ru1ObfsPassword = "adb517077635c20a447995e601f0767a"
+        // PL1 — 82.25.56.175 (Warsaw/Poland, UDP :443)
+        static let pl1Server       = "82.25.56.175:443"
+        static let pl1Auth         = "4e8dc07100ec4cf1d1d67f01e63da26b"
+        static let pl1ObfsPassword = "f17d6c43015e8d72294347230d4385df"
         // YC — test.limm.space (Yandex Cloud, UDP :443)
         static let ycServer        = "test.limm.space:443"
         static let ycAuth          = "0e461cefc18fa992cc00091cb093d9b9"
@@ -76,6 +80,8 @@ final class LimmHy2Process {
             server = HY2.ru1Server; auth = HY2.ru1Auth; obfsPassword = HY2.ru1ObfsPassword
         } else if up.contains("DE1") {
             server = HY2.de1Server; auth = HY2.de1Auth; obfsPassword = HY2.de1ObfsPassword
+        } else if up.contains("PL1") {
+            server = HY2.pl1Server; auth = HY2.pl1Auth; obfsPassword = HY2.pl1ObfsPassword
         } else if up.contains("YC") {
             server = HY2.ycServer; auth = HY2.ycAuth; obfsPassword = HY2.ycObfsPassword
         } else {

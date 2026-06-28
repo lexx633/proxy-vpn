@@ -439,6 +439,15 @@ class V2rayLaunch: NSObject {
         let httpPort = getHttpProxyPort()
         let sockPort = getSocksProxyPort()
 
+        // launchctl stop is async — wait for the old xray process to fully release ports
+        // (up to 2s). Without this the port check below fires while the dying process
+        // still holds the socket → alertDialog → Start() returns false → SOCKS port never
+        // comes up for the next profile in LimmFullTest. Typical xray shutdown is <0.3s.
+        let portsDeadline = Date().addingTimeInterval(2.0)
+        while (isPortOpen(port: httpPort) || isPortOpen(port: sockPort)) && Date() < portsDeadline {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+
         // port has been used
         if isPortOpen(port: httpPort) {
             var toast = "http port \(httpPort) has been used, please replace it from advance setting"
